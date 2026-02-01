@@ -12,6 +12,10 @@ struct SettingsView: View {
     // UI Settings
     @AppStorage("hideCommandInList") private var hideCommandInList = true
     
+    // Shortcut Settings
+    @AppStorage("globalShortcutKey") private var globalShortcutKey = "n"
+    @AppStorage("globalShortcutModifier") private var globalShortcutModifier = "command"
+    
     @Environment(\.presentationMode) var presentationMode
 
     var body: some View {
@@ -21,7 +25,36 @@ struct SettingsView: View {
             
             Divider()
             
-            // Group 1: Command Wrappers
+            // Group 1: Shortcut
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Global Activation Shortcut (From Terminal)")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                HStack {
+                    Picker("", selection: $globalShortcutModifier) {
+                        Text("Command").tag("command")
+                        Text("Control").tag("control")
+                        Text("Option").tag("option")
+                    }
+                    .frame(width: 100)
+                    
+                    Text("+")
+                    
+                    TextField("Key", text: $globalShortcutKey)
+                        .frame(width: 30)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .onChange(of: globalShortcutKey) { newValue in
+                            if newValue.count > 1 {
+                                globalShortcutKey = String(newValue.prefix(1))
+                            }
+                        }
+                }
+            }
+            
+            Divider()
+            
+            // Group 2: Command Wrappers
             VStack(alignment: .leading, spacing: 8) {
                 Text("Command Execution Wrappers")
                     .font(.subheadline)
@@ -44,11 +77,11 @@ struct SettingsView: View {
             
             Divider()
             
-            // Group 2: UI Preferences
+            // Group 3: UI Preferences
             Toggle("Hide Command in List", isOn: $hideCommandInList)
                 .toggleStyle(.switch)
             
-            // Group 3: Mouse Behavior
+            // Group 4: Mouse Behavior
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("Copy on Select", isOn: $copyOnSelect)
                     .toggleStyle(.switch)
@@ -59,7 +92,7 @@ struct SettingsView: View {
 
             Divider()
 
-            // Group 4: Debug Mode
+            // Group 5: Debug Mode
             Toggle("Debug Mode", isOn: $debugMode)
                 .toggleStyle(.switch)
             
@@ -72,6 +105,6 @@ struct SettingsView: View {
             .keyboardShortcut(.defaultAction)
         }
         .padding()
-        .frame(width: 350, height: 550)
+        .frame(width: 400, height: 600)
     }
 }

@@ -4,6 +4,7 @@ import SwiftUI
 class AppDelegate: NSObject, NSApplicationDelegate {
     var window: NSWindow!
     var mouseInterceptor: MouseInterceptor?
+    var keyboardInterceptor: KeyboardInterceptor?
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // 0. Register Default Settings
@@ -15,7 +16,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "commandPrefix": "unset HISTFILE ; clear ; ",
             "commandSuffix": " && exit",
             // UI Defaults
-            "hideCommandInList": true
+            "hideCommandInList": true,
+            // Global Shortcut
+            "globalShortcutKey": "n",
+            "globalShortcutModifier": "command"
         ])
 
         // 1. CRITICAL: Force the app to be a regular "Foreground" app so it can accept keyboard input
@@ -38,9 +42,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Keep window floating above others
         window.level = .floating
 
-        // Start the mouse hook
+        // Start Interceptors
         mouseInterceptor = MouseInterceptor()
         mouseInterceptor?.start()
+        
+        keyboardInterceptor = KeyboardInterceptor()
+        keyboardInterceptor?.start()
         
         print("MTTerminal Wrapper Started")
         
@@ -61,5 +68,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ aNotification: Notification) {
         mouseInterceptor?.stop()
+        keyboardInterceptor?.stop()
     }
 }

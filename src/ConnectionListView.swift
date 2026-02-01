@@ -62,6 +62,8 @@ struct ConnectionListView: View {
     
     // Search State
     @State private var searchText = ""
+    // Focus State for the Search Field
+    @FocusState private var isSearchFocused: Bool
     
     // Keyboard Navigation State
     @State private var highlightedConnectionID: UUID? = nil
@@ -75,6 +77,9 @@ struct ConnectionListView: View {
     // Double-click simulation state
     @State private var lastClickTime: Date = Date.distantPast
     @State private var lastClickedID: UUID? = nil
+    
+    // Custom Color #0A3069
+    let activeHighlightColor = Color(red: 10/255.0, green: 48/255.0, blue: 105/255.0)
     
     // Computed property for filtering
     var filteredConnections: [Connection] {
@@ -110,21 +115,22 @@ struct ConnectionListView: View {
                 // Search Bar
                 TextField("Search profiles...", text: $searchText)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .focused($isSearchFocused) // Bind focus
                     .padding(.horizontal)
                     .padding(.bottom, 10)
-                    // Auto-select first item when searching
-                    .onChange(of: searchText) { _ in
-                        if let first = filteredConnections.first {
-                            highlightedConnectionID = first.id
-                        } else {
+                    .onChange(of: searchText) { text in
+                        if text.isEmpty {
                             highlightedConnectionID = nil
+                        } else {
+                            if let first = filteredConnections.first {
+                                highlightedConnectionID = first.id
+                            }
                         }
                     }
             }
             .background(Color(NSColor.controlBackgroundColor))
             .contentShape(Rectangle()) 
             .onTapGesture {
-                // Clicking header background cancels edit
                 if selectedConnectionID != nil {
                     resetForm()
                 }
@@ -146,18 +152,13 @@ struct ConnectionListView: View {
                                     Button(action: {
                                         let now = Date()
                                         if lastClickedID == conn.id && now.timeIntervalSince(lastClickTime) < 0.3 {
-                                            // Double Click detected -> Connect
                                             launchConnection(conn)
                                         } else {
-                                            // Single Click -> Edit Mode (Instant)
                                             selectedConnectionID = conn.id
                                             newName = conn.name
                                             newCommand = conn.command
-                                            // Also update highlight to this row
                                             highlightedConnectionID = conn.id
                                         }
-                                        
-                                        // Update State
                                         lastClickTime = now
                                         lastClickedID = conn.id
                                     }) {
@@ -191,17 +192,17 @@ struct ConnectionListView: View {
                                         launchConnection(conn)
                                     }
                                     .buttonStyle(.borderedProminent)
-                                    .tint(isHighlighted ? Color.white.opacity(0.2) : nil) // Slight tint change if highlighted
+                                    .tint(isHighlighted ? Color.white.opacity(0.2) : nil)
                                     .padding(.leading, 8)
                                 }
                                 .padding(.vertical, 6)
                                 .padding(.horizontal, 12)
                                 .background(
                                     RoundedRectangle(cornerRadius: 6)
-                                        .fill(isHighlighted ? Color.accentColor : Color.clear)
+                                        .fill(isHighlighted ? activeHighlightColor : Color.clear)
                                         .padding(.horizontal, 4)
                                 )
-                                .id(conn.id) // For ScrollViewReader
+                                .id(conn.id)
                                 
                                 Divider()
                             }
@@ -222,7 +223,6 @@ struct ConnectionListView: View {
                         resetForm()
                     }
                 }
-                // Handle Auto-Scrolling when using arrows
                 .onChange(of: highlightedConnectionID) { id in
                     if let id = id {
                         withAnimation {
@@ -290,54 +290,49 @@ struct ConnectionListView: View {
             SettingsView()
         }
         .onAppear {
-            // Initial selection
-            if let first = store.connections.first {
-                highlightedConnectionID = first.id
-            }
+            highlightedConnectionID = nil
             
-            // KEYBOARD MONITOR
+            // Listen for window activation to focus search
+            NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+                // Delay slightly to ensure window is ready
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.isSearchFocused = true
+                }
+            }
+
+            // Keyboard Monitor
             NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                // Only process if no modal sheet is presented
                 guard !showSettings else { return event }
-                
                 let currentList = filteredConnections
                 
                 switch event.keyCode {
-                case 125: // Arrow Down
+                case 125: // Down
                     if let current = highlightedConnectionID,
                        let idx = currentList.firstIndex(where: { $0.id == current }) {
                         let nextIdx = min(idx + 1, currentList.count - 1)
                         highlightedConnectionID = currentList[nextIdx].id
-                        return nil // Consume event
+                        return nil
                     } else if !currentList.isEmpty {
                         highlightedConnectionID = currentList[0].id
                         return nil
                     }
-                    
-                case 126: // Arrow Up
+                case 126: // Up
                     if let current = highlightedConnectionID,
                        let idx = currentList.firstIndex(where: { $0.id == current }) {
                         let prevIdx = max(idx - 1, 0)
                         highlightedConnectionID = currentList[prevIdx].id
-                        return nil // Consume event
+                        return nil
                     } else if !currentList.isEmpty {
                         highlightedConnectionID = currentList[0].id
                         return nil
                     }
-                    
-                case 36: // Enter / Return
-                    // If we have a highlight and we are NOT in the editing fields (simple check)
-                    // Note: If user is typing in "New Name" field, we probably want Enter to do something else?
-                    // For now, let's assume if search box is focused OR list is focused, Enter launches.
-                    // If selectedConnectionID is NOT nil, user is editing, so maybe don't launch?
+                case 36: // Enter
                     if selectedConnectionID == nil, let current = highlightedConnectionID,
                        let conn = currentList.first(where: { $0.id == current }) {
                         launchConnection(conn)
-                        return nil // Consume event
+                        return nil
                     }
-                    
-                default:
-                    break
+                default: break
                 }
                 return event
             }
@@ -349,6 +344,8 @@ struct ConnectionListView: View {
         let suffix = UserDefaults.standard.string(forKey: "commandSuffix") ?? ""
         let finalCommand = prefix + conn.command + suffix
         TerminalBridge.launch(command: finalCommand)
+        searchText = ""
+        highlightedConnectionID = nil
     }
     
     private func resetForm() {
@@ -356,7 +353,5 @@ struct ConnectionListView: View {
         newCommand = ""
         selectedConnectionID = nil
         lastClickedID = nil
-        // Reset highlight to top of list if possible, or keep as is? 
-        // Best UX: Keep selection or reset to top if filtering changed.
     }
 }

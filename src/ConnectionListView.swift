@@ -74,7 +74,7 @@ struct ConnectionListView: View {
                 secondaryButton: .cancel()
             )
         }
-        // Import Handler
+        // Import Handler (Decodes User-Friendly JSON)
         .fileImporter(
             isPresented: $isImporting,
             allowedContentTypes: [.json],
@@ -83,13 +83,14 @@ struct ConnectionListView: View {
             switch result {
             case .success(let urls):
                 if let url = urls.first {
-                    // Start accessing security scoped resource
                     guard url.startAccessingSecurityScopedResource() else { return }
                     defer { url.stopAccessingSecurityScopedResource() }
                     
                     if let data = try? Data(contentsOf: url),
-                       let storeData = try? JSONDecoder().decode(StoreData.self, from: data) {
-                        store.restore(from: storeData)
+                       let exportData = try? JSONDecoder().decode(ExportData.self, from: data) {
+                        store.restore(from: exportData)
+                    } else {
+                        print("Import failed: JSON format mismatch (Expected ExportData format)")
                     }
                 }
             case .failure(let error):
@@ -127,7 +128,8 @@ struct ConnectionListView: View {
                     }
                     
                     Button {
-                        documentToExport = ConnectionsDocument(storeData: store.getSnapshot())
+                        // Generate Snapshot for Export
+                        documentToExport = ConnectionsDocument(exportData: store.getSnapshot())
                         isExporting = true
                     } label: {
                         Text("Export JSON...")

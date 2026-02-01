@@ -7,7 +7,7 @@ struct AppColors {
     static let activeHighlight = Color(red: 10/255.0, green: 48/255.0, blue: 105/255.0)
 }
 
-// MARK: - Data Models
+// MARK: - Internal Data Models
 
 struct ConnectionGroup: Identifiable, Codable {
     var id = UUID()
@@ -22,10 +22,29 @@ struct Connection: Identifiable, Codable {
     var command: String
 }
 
-// Data Wrapper for JSON Persistence
+// Data Wrapper for Internal Persistence
 struct StoreData: Codable {
     var groups: [ConnectionGroup]
     var connections: [Connection]
+}
+
+// MARK: - Export/Import Models (User Friendly)
+// These structs define the JSON format for Import/Export (No UUIDs)
+
+struct ExportGroup: Codable {
+    var name: String
+    var isExpanded: Bool
+}
+
+struct ExportConnection: Codable {
+    var name: String
+    var command: String
+    var group: String? // Optional Group Name
+}
+
+struct ExportData: Codable {
+    var groups: [ExportGroup]
+    var connections: [ExportConnection]
 }
 
 // Wrapper for Alert Identifiable state
@@ -37,23 +56,23 @@ struct GroupAlertItem: Identifiable {
 struct ConnectionsDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.json] }
 
-    var storeData: StoreData
+    var exportData: ExportData
 
-    init(storeData: StoreData) {
-        self.storeData = storeData
+    init(exportData: ExportData) {
+        self.exportData = exportData
     }
 
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else {
             throw CocoaError(.fileReadCorruptFile)
         }
-        self.storeData = try JSONDecoder().decode(StoreData.self, from: data)
+        self.exportData = try JSONDecoder().decode(ExportData.self, from: data)
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        let data = try encoder.encode(storeData)
+        let data = try encoder.encode(exportData)
         return FileWrapper(regularFileWithContents: data)
     }
 }

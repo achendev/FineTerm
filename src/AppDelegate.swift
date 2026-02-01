@@ -24,7 +24,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "globalShortcutAnywhere": false
         ])
 
-        // 1. CRITICAL: Force the app to be a regular "Foreground" app so it can accept keyboard input
+        // 1. Setup Main Menu (Crucial for Cmd+C, Cmd+V, Cmd+A in TextFields)
+        setupMainMenu()
+
+        // 2. CRITICAL: Force the app to be a regular "Foreground" app so it can accept keyboard input
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         
@@ -68,5 +71,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ aNotification: Notification) {
         mouseInterceptor?.stop()
         keyboardInterceptor?.stop()
+    }
+    
+    // Manually create the Menu Bar. 
+    // This is required for pure Swift apps without XIBs to support standard text editing shortcuts.
+    func setupMainMenu() {
+        let mainMenu = NSMenu()
+
+        // 1. App Menu (NativeTab)
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+        let appMenu = NSMenu()
+        appMenuItem.submenu = appMenu
+        
+        appMenu.addItem(withTitle: "About NativeTab", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(withTitle: "Quit NativeTab", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
+        // 2. Edit Menu (Cut, Copy, Paste, Select All)
+        let editMenuItem = NSMenuItem()
+        editMenuItem.submenu = NSMenu(title: "Edit")
+        mainMenu.addItem(editMenuItem)
+        let editMenu = editMenuItem.submenu!
+
+        editMenu.addItem(withTitle: "Undo", action: Selector("undo:"), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector("redo:"), keyEquivalent: "Z")
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(withTitle: "Cut", action: Selector("cut:"), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: Selector("copy:"), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: Selector("paste:"), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: Selector("selectAll:"), keyEquivalent: "a")
+
+        NSApp.mainMenu = mainMenu
     }
 }

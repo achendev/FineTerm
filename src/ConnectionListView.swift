@@ -297,8 +297,9 @@ struct ConnectionListView: View {
         }
         
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard !showSettings else { return event }
-
+            // 1. GLOBAL SHORTCUT HANDLING WITHIN APP (Priority High)
+            // Checked *before* "showSettings" guard to ensure we can exit settings/edit modes instantly
+            
             let defaults = UserDefaults.standard
             let targetKeyChar = defaults.string(forKey: "globalShortcutKey") ?? "n"
             let targetModifierStr = defaults.string(forKey: "globalShortcutModifier") ?? "command"
@@ -321,13 +322,20 @@ struct ConnectionListView: View {
                 }
                 
                 if modifierMatch {
+                    // ACTION: Reset state and focus search
                     DispatchQueue.main.async {
-                        self.isSearchFocused = true
+                        self.showSettings = false        // Close settings if open
+                        self.selectedConnectionID = nil  // Deselect current row (exit edit mode)
+                        self.resetForm()                 // Clear form
+                        self.isSearchFocused = true      // Focus Search
                     }
-                    return nil
+                    return nil // Swallow event
                 }
             }
             
+            // 2. Navigation Handling (Only if not in Settings)
+            guard !showSettings else { return event }
+
             let currentList = visibleConnectionsForNav
             
             switch event.keyCode {

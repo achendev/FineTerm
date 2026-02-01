@@ -12,12 +12,14 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
           frontApp.bundleIdentifier == "com.apple.Terminal" else {
         return Unmanaged.passUnretained(event)
     }
+    
+    let isDebug = UserDefaults.standard.bool(forKey: "debugMode")
 
     // 1. Handle Right Click -> Paste (Cmd+V)
     if type == .rightMouseDown {
         // Check Setting
         if UserDefaults.standard.bool(forKey: "pasteOnRightClick") {
-            print("DEBUG: Right Click detected. Pasting...")
+            if isDebug { print("DEBUG: Right Click detected. Pasting...") }
             
             let source = CGEventSource(stateID: .hidSystemState)
             let vKey: CGKeyCode = 9 // 'v'
@@ -33,7 +35,6 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
             }
             return nil // Swallow the right click
         }
-        // If disabled, let the event pass through normally
         return Unmanaged.passUnretained(event)
     }
     
@@ -62,7 +63,9 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
         // B) User Double-clicked (Word selection) or Triple-clicked (Line selection)
         if dist > 5.0 || clickCount >= 2 {
             
-            print("DEBUG: Selection Detected (Drag: \(Int(dist))px, Clicks: \(clickCount)). Queuing Copy...")
+            if isDebug {
+                print("DEBUG: Selection Detected (Drag: \(Int(dist))px, Clicks: \(clickCount)). Queuing Copy...")
+            }
             
             // Wait 0.25s for Terminal to finalize the visual selection
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
@@ -80,7 +83,10 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
                         
                         cmdDown.post(tap: .cghidEventTap)
                         cmdUp.post(tap: .cghidEventTap)
-                        print("DEBUG: Cmd+C sent.")
+                        
+                        if UserDefaults.standard.bool(forKey: "debugMode") {
+                            print("DEBUG: Cmd+C sent.")
+                        }
                     }
                 }
             }

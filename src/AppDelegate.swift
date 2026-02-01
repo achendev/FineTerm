@@ -6,10 +6,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var mouseInterceptor: MouseInterceptor?
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        // 0. Register Default Settings (Enabled by default)
+        // 0. Register Default Settings
         UserDefaults.standard.register(defaults: [
             "copyOnSelect": true,
-            "pasteOnRightClick": true
+            "pasteOnRightClick": true,
+            "debugMode": false
         ])
 
         // 1. CRITICAL: Force the app to be a regular "Foreground" app so it can accept keyboard input

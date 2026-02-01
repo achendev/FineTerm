@@ -31,9 +31,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         
-        // Create the connection manager window
-        let contentView = ConnectionListView()
-        
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 500),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -41,6 +38,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.setFrameAutosaveName("Main Window")
         window.title = "NativeTab"
+        
+        checkPermissionsAndStart()
+    }
+
+    func checkPermissionsAndStart() {
+        if PermissionManager.checkAccessibility() {
+            startMainApp()
+        } else {
+            showPermissionOverlay()
+        }
+    }
+
+    func showPermissionOverlay() {
+        let permissionView = PermissionView { [weak self] in
+            self?.startMainApp()
+        }
+        window.contentView = NSHostingView(rootView: permissionView)
+        window.styleMask = [.titled, .closable] // Simplify style for permission check
+        // Resize window to fit permission view
+        window.setContentSize(NSSize(width: 380, height: 320))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func startMainApp() {
+        // Restore standard style and size
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(NSSize(width: 320, height: 500))
+        window.center()
+        
+        let contentView = ConnectionListView()
         window.contentView = NSHostingView(rootView: contentView)
         window.makeKeyAndOrderFront(nil)
         
@@ -52,20 +80,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         keyboardInterceptor?.start()
         
         print("NativeTab Started")
-        
-        // Request Accessibility permissions check
-        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String : true]
-        let accessEnabled = AXIsProcessTrustedWithOptions(options)
-        
-        if accessEnabled {
-            print("SUCCESS: Accessibility permissions are active.")
-        } else {
-            print("ERROR: Accessibility permissions NOT granted.")
-            print("       1. Open System Settings -> Privacy & Security -> Accessibility")
-            print("       2. Remove any old entries for 'NativeTab'")
-            print("       3. Drag the new ./bin/NativeTab executable into the list")
-            print("       4. Restart this app")
-        }
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {

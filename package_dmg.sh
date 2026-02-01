@@ -6,11 +6,13 @@ APP_BUNDLE="$APP_NAME.app"
 DMG_NAME="${APP_NAME}.dmg"
 VOL_NAME="$APP_NAME"
 
-# Check if app exists
-if [ ! -d "$APP_BUNDLE" ]; then
-    echo "❌ App bundle not found. Running build script..."
-    ./build.sh
-fi
+# Always clean and rebuild
+echo "▶ Cleaning previous builds..."
+rm -rf "$APP_BUNDLE"
+rm -f "$DMG_NAME"
+
+echo "▶ Running build script..."
+./build.sh
 
 echo "▶ Packaging $APP_BUNDLE into $DMG_NAME..."
 

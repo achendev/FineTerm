@@ -40,11 +40,15 @@ struct ConnectionRowView: View {
                     else { NSCursor.pop() }
                 }
                 
-                // Connect Button
-                Button("Connect", action: onConnect)
-                    .buttonStyle(.borderedProminent)
-                    .tint(isHighlighted ? Color.white.opacity(0.2) : nil)
-                    .padding(.leading, 8)
+                // Connect Button (Icon)
+                Button(action: onConnect) {
+                    Image(systemName: "play.circle")
+                        .font(.system(size: 16))
+                        .foregroundColor(isHighlighted ? .white.opacity(0.9) : .secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Connect")
+                .padding(.leading, 8)
             }
             .padding(.vertical, 6)
             .padding(.horizontal, 12)

@@ -80,30 +80,43 @@ class ConnectionStore: ObservableObject {
     }
     
     func restore(from data: ExportData) {
-        var newGroups: [ConnectionGroup] = []
-        var newConnections: [Connection] = []
-        var groupMap: [String: UUID] = [:]
+        // MERGE STRATEGY: Add non-existing items, preserve existing ones.
         
-        // 1. Restore Groups (Ensure unique names, Default expanded = true)
+        // 1. Index Existing Groups by Name
+        var groupNameMap: [String: UUID] = [:]
+        for group in self.groups {
+            groupNameMap[group.name] = group.id
+        }
+        
+        // 2. Merge Groups (Append if missing)
         for g in data.groups {
-            if groupMap[g.name] == nil {
+            if groupNameMap[g.name] == nil {
                 let newG = ConnectionGroup(name: g.name, isExpanded: true)
-                newGroups.append(newG)
-                groupMap[g.name] = newG.id
+                self.groups.append(newG)
+                groupNameMap[g.name] = newG.id
             }
         }
         
-        // 2. Restore Connections
+        // 3. Merge Connections (Append if missing)
         for c in data.connections {
+            // Resolve Group ID
             var gID: UUID? = nil
             if let gName = c.group {
-                gID = groupMap[gName]
+                gID = groupNameMap[gName]
             }
-            newConnections.append(Connection(groupID: gID, name: c.name, command: c.command))
+            
+            // Check for duplicates (Name + Command + Group must match to be considered duplicate)
+            let exists = self.connections.contains { existing in
+                return existing.name == c.name &&
+                       existing.command == c.command &&
+                       existing.groupID == gID
+            }
+            
+            if !exists {
+                self.connections.append(Connection(groupID: gID, name: c.name, command: c.command))
+            }
         }
         
-        self.groups = newGroups
-        self.connections = newConnections
         save()
     }
     

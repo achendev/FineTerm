@@ -39,9 +39,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.contentView = NSHostingView(rootView: contentView)
         window.makeKeyAndOrderFront(nil)
         
-        // Keep window floating above others
-        window.level = .floating
-
+        // Standard window level (removed .floating to allow window to go behind Terminal)
+        
         // Start Interceptors
         mouseInterceptor = MouseInterceptor()
         mouseInterceptor?.start()

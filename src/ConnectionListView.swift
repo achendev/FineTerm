@@ -86,6 +86,13 @@ struct ConnectionListView: View {
             }
             .padding()
             .background(Color(NSColor.controlBackgroundColor))
+            .contentShape(Rectangle()) // Ensure the whole header captures taps
+            .onTapGesture {
+                // Clicking header cancels edit
+                if selectedConnectionID != nil {
+                    resetForm()
+                }
+            }
 
             Divider()
 
@@ -144,6 +151,13 @@ struct ConnectionListView: View {
                 }
                 .onDelete(perform: store.remove)
             }
+            .onTapGesture {
+                // Clicking empty space in the List cancels edit
+                // Note: Tapping a row is handled by the row's gesture first
+                if selectedConnectionID != nil {
+                    resetForm()
+                }
+            }
             
             Divider()
             
@@ -200,6 +214,7 @@ struct ConnectionListView: View {
             }
             .padding()
             .background(Color(NSColor.controlBackgroundColor))
+            // No onTapGesture here, so clicks in the form DO NOT cancel editing
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()

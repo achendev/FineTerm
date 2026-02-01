@@ -104,6 +104,8 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     if !globalAnywhere {
         guard let frontApp = NSWorkspace.shared.frontmostApplication,
               frontApp.bundleIdentifier == "com.apple.Terminal" else {
+            // If we are NOT in Terminal, we might be in our own app.
+            // We pass it through so our app can handle it normally.
             return Unmanaged.passUnretained(event)
         }
     }
@@ -135,7 +137,14 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     
     if modifierMatch && event.getIntegerValueField(.keyboardEventKeycode) == Int64(targetKeyCode) {
         // MATCH DETECTED!
-        // Activate our app
+        
+        // FIX: If the app is ALREADY active, do NOT swallow the event.
+        // Pass it through so the Local Event Monitor in the View can handle it (reset focus, clear form).
+        if NSApp.isActive {
+            return Unmanaged.passUnretained(event)
+        }
+        
+        // Otherwise, wake the app and swallow the event
         DispatchQueue.main.async {
             NSApp.activate(ignoringOtherApps: true)
         }

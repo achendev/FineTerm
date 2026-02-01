@@ -1,3 +1,4 @@
+import Cocoa
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -297,10 +298,15 @@ struct ConnectionListView: View {
         }
         
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let defaults = UserDefaults.standard
+            let isDebug = defaults.bool(forKey: "debugMode")
+            
+            // Debug ALL keys to ensure monitor is working
+            if isDebug { print("DEBUG: LocalMonitor received key: \(event.keyCode)") }
+
             // 1. GLOBAL SHORTCUT HANDLING WITHIN APP (Priority High)
             // Checked *before* "showSettings" guard to ensure we can exit settings/edit modes instantly
             
-            let defaults = UserDefaults.standard
             let targetKeyChar = defaults.string(forKey: "globalShortcutKey") ?? "n"
             let targetModifierStr = defaults.string(forKey: "globalShortcutModifier") ?? "command"
             
@@ -322,12 +328,27 @@ struct ConnectionListView: View {
                 }
                 
                 if modifierMatch {
+                    if isDebug { print("DEBUG: Local KeyDown detected matching Shortcut! KeyCode: \(event.keyCode)") }
+
                     // ACTION: Reset state and focus search
+                    
+                    // Forcefully clear Cocoa focus to ensure SwiftUI binding can take over
+                    if isDebug { print("DEBUG: Forcing NSApp.keyWindow makeFirstResponder(nil)") }
+                    NSApp.keyWindow?.makeFirstResponder(nil)
+                    
                     DispatchQueue.main.async {
+                        if isDebug { print("DEBUG: Resetting Form and Selection") }
                         self.showSettings = false        // Close settings if open
                         self.selectedConnectionID = nil  // Deselect current row (exit edit mode)
                         self.resetForm()                 // Clear form
-                        self.isSearchFocused = true      // Focus Search
+                        
+                        // Toggle focus state to force update
+                        self.isSearchFocused = false
+                        
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            if isDebug { print("DEBUG: Setting isSearchFocused = true") }
+                            self.isSearchFocused = true
+                        }
                     }
                     return nil // Swallow event
                 }

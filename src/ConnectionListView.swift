@@ -261,8 +261,18 @@ struct ConnectionListView: View {
         let changeTerminalName = UserDefaults.standard.bool(forKey: "changeTerminalName")
         let terminalNamePrefix = changeTerminalName ? "printf '\\033]0;\(conn.name)\\007'; clear; " : ""
         
-        let prefix = conn.usePrefix ? (UserDefaults.standard.string(forKey: "commandPrefix") ?? "") : ""
-        let suffix = conn.useSuffix ? (UserDefaults.standard.string(forKey: "commandSuffix") ?? "") : ""
+        // Get prefix/suffix from settings
+        var prefix = conn.usePrefix ? (UserDefaults.standard.string(forKey: "commandPrefix") ?? "") : ""
+        var suffix = conn.useSuffix ? (UserDefaults.standard.string(forKey: "commandSuffix") ?? "") : ""
+        
+        // Replace template variables in prefix and suffix
+        prefix = prefix
+            .replacingOccurrences(of: "$PROFILE_NAME", with: conn.name)
+            .replacingOccurrences(of: "$PROFILE_COMMAND", with: conn.command)
+        suffix = suffix
+            .replacingOccurrences(of: "$PROFILE_NAME", with: conn.name)
+            .replacingOccurrences(of: "$PROFILE_COMMAND", with: conn.command)
+        
         let finalCommand = terminalNamePrefix + prefix + conn.command + suffix
         TerminalBridge.launch(command: finalCommand)
         searchText = ""

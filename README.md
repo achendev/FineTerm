@@ -97,6 +97,9 @@ Click the ⚙️ icon to configure:
 *   **Prefix:** Commands prepended before your connection (e.g., `unset HISTFILE ; clear ;`).
 *   **Suffix:** Commands appended after (e.g., `&& exit`).
 *   **Set Terminal Tab Name:** Automatically names the Terminal tab after your connection.
+*   **Template Variables:** Use these in prefix/suffix for dynamic values:
+    *   `$PROFILE_NAME` – Replaced with the connection name (e.g., "Production Server")
+    *   `$PROFILE_COMMAND` – Replaced with the connection command (e.g., "ssh user@example.com")
 
 **UI Preferences:**
 *   **Hide Command in List:** Show only connection names, hiding the command details.

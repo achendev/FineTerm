@@ -35,14 +35,6 @@ struct SettingsView: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 
-                Toggle("System-wide (Global)", isOn: $globalShortcutAnywhere)
-                    .toggleStyle(.switch)
-                    .help("If enabled, the shortcut works from any app, not just Terminal.")
-                
-                Toggle("Second Activation to Terminal", isOn: $secondActivationToTerminal)
-                    .toggleStyle(.switch)
-                    .help("If enabled, pressing the shortcut again when search is focused will switch to Terminal.")
-                
                 HStack {
                     Picker("", selection: $globalShortcutModifier) {
                         Text("Command").tag("command")
@@ -62,6 +54,14 @@ struct SettingsView: View {
                             }
                         }
                 }
+                
+                Toggle("System-wide (Global)", isOn: $globalShortcutAnywhere)
+                    .toggleStyle(.switch)
+                    .help("If enabled, the shortcut works from any app, not just Terminal.")
+                
+                Toggle("Second Activation to Terminal", isOn: $secondActivationToTerminal)
+                    .toggleStyle(.switch)
+                    .help("If enabled, pressing the shortcut again when search is focused will switch to Terminal.")
             }
             
             Divider()
@@ -127,6 +127,6 @@ struct SettingsView: View {
             .keyboardShortcut(.defaultAction)
         }
         .padding()
-        .frame(width: 400, height: 600)
+        .frame(width: 400, height: 650)
     }
 }

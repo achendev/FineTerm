@@ -66,6 +66,10 @@ struct ConnectionListView: View {
     // State to track if we are editing a connection
     @State private var selectedConnectionID: UUID? = nil
     
+    // Double-click simulation state
+    @State private var lastClickTime: Date = Date.distantPast
+    @State private var lastClickedID: UUID? = nil
+    
     var body: some View {
         VStack(spacing: 0) {
             // Header with Settings Button
@@ -87,38 +91,54 @@ struct ConnectionListView: View {
 
             List {
                 ForEach(store.connections) { conn in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(conn.name)
-                                .font(.headline)
-                                .foregroundColor(selectedConnectionID == conn.id ? .accentColor : .primary)
-                            
-                            // Conditionally show/hide the command
-                            if !hideCommandInList {
-                                Text(conn.command)
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+                    HStack(spacing: 0) {
+                        // --- INTERACTIVE ROW AREA (Name + Spacer) ---
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(conn.name)
+                                    .font(.headline)
+                                    .foregroundColor(selectedConnectionID == conn.id ? .accentColor : .primary)
+                                
+                                if !hideCommandInList {
+                                    Text(conn.command)
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                }
+                            }
+                            Spacer()
+                        }
+                        .contentShape(Rectangle()) // Ensures the Spacer is also clickable
+                        .onHover { hovering in
+                            if hovering {
+                                NSCursor.pointingHand.push()
+                            } else {
+                                NSCursor.pop()
                             }
                         }
-                        .contentShape(Rectangle()) // Make text area clickable
+                        // Manual Double Click Logic to prevent Single Click delay
                         .onTapGesture {
-                            // Populate fields for editing
-                            selectedConnectionID = conn.id
-                            newName = conn.name
-                            newCommand = conn.command
-                        }
-                        
-                        Spacer()
-                        
-                        Button("Connect") {
-                            // Inject Prefix and Suffix here
-                            let prefix = UserDefaults.standard.string(forKey: "commandPrefix") ?? ""
-                            let suffix = UserDefaults.standard.string(forKey: "commandSuffix") ?? ""
-                            let finalCommand = prefix + conn.command + suffix
+                            let now = Date()
+                            if lastClickedID == conn.id && now.timeIntervalSince(lastClickTime) < 0.3 {
+                                // Double Click detected -> Connect
+                                launchConnection(conn)
+                            } else {
+                                // Single Click -> Edit Mode (Instant)
+                                selectedConnectionID = conn.id
+                                newName = conn.name
+                                newCommand = conn.command
+                            }
                             
-                            TerminalBridge.launch(command: finalCommand)
+                            // Update State
+                            lastClickTime = now
+                            lastClickedID = conn.id
+                        }
+
+                        // --- CONNECT BUTTON ---
+                        Button("Connect") {
+                            launchConnection(conn)
                         }
                         .buttonStyle(.borderedProminent)
+                        .padding(.leading, 8)
                     }
                     .padding(.vertical, 4)
                 }
@@ -155,15 +175,15 @@ struct ConnectionListView: View {
                             }
                         }
                         .disabled(newName.isEmpty || newCommand.isEmpty)
-                        .buttonStyle(.borderedProminent) // Blue by default
+                        .buttonStyle(.borderedProminent)
                         .frame(maxWidth: .infinity)
                         
                         Button("Delete") {
                             store.delete(id: selectedID)
                             resetForm()
                         }
-                        .buttonStyle(.borderedProminent) // Filled button
-                        .tint(.red)                      // Painted Red
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
                         .frame(maxWidth: .infinity)
                     }
                 } else {
@@ -186,9 +206,17 @@ struct ConnectionListView: View {
         }
     }
     
+    private func launchConnection(_ conn: Connection) {
+        let prefix = UserDefaults.standard.string(forKey: "commandPrefix") ?? ""
+        let suffix = UserDefaults.standard.string(forKey: "commandSuffix") ?? ""
+        let finalCommand = prefix + conn.command + suffix
+        TerminalBridge.launch(command: finalCommand)
+    }
+    
     private func resetForm() {
         newName = ""
         newCommand = ""
         selectedConnectionID = nil
+        lastClickedID = nil
     }
 }

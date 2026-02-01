@@ -6,7 +6,7 @@ NativeTab is a lightweight, native Swift application designed to supercharge the
 
 It does not replace Terminal.app—it **wraps** it with a powerful session manager and injects nostalgic PuTTY-style "Pro" input behaviors that Unix and Windows admins have missed for years.
 
-## 🚀 Why is this "New & Fresh"?
+## Why NativeTab?
 
 Most terminal replacements (Hyper, Alacritty, iTerm) require you to abandon the highly optimized, battery-friendly native macOS Terminal. 
 
@@ -18,7 +18,7 @@ Most terminal replacements (Hyper, Alacritty, iTerm) require you to abandon the 
 
 ---
 
-## ✨ Key Features
+## Key Features
 
 ### 1. Connection Manager
 *   **Organized:** Group your SSH, Telnet, or local script commands into foldable folders.
@@ -41,7 +41,7 @@ Most terminal replacements (Hyper, Alacritty, iTerm) require you to abandon the 
 
 ---
 
-## 🛠 Installation & Build
+## Installation & Build
 
 This project is a raw Swift codebase. You don't need Xcode to build it, just the command line tools.
 
@@ -69,7 +69,7 @@ This project is a raw Swift codebase. You don't need Xcode to build it, just the
 
 ---
 
-## 📖 Usage Guide
+## Usage Guide
 
 ### Managing Connections
 *   **Add:** Click the "+" button or fill in the form at the bottom.
@@ -111,7 +111,7 @@ Click the ⚙️ icon to configure:
 
 ---
 
-## 🔧 How It Works (Architecture)
+## How It Works (Architecture)
 
 1.  **SwiftUI Interface:** Renders the lightweight list and settings.
 2.  **AppleScript Bridge:** When you click "Connect", the app talks to Terminal.app via AppleScript to spawn tabs and type commands.
@@ -119,5 +119,5 @@ Click the ⚙️ icon to configure:
     *   The app filters for events only when `com.apple.Terminal` is the frontmost application (unless global mode is enabled).
     *   It swallows specific events (like Right Click) and injects simulated keystrokes (`Cmd+V`) in their place.
 
-## 📝 License
+## License
 MIT License.

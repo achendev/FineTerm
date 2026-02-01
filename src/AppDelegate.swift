@@ -23,7 +23,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Global Shortcut
             "globalShortcutKey": "n",
             "globalShortcutModifier": "command",
-            "globalShortcutAnywhere": false
+            "globalShortcutAnywhere": false,
+            "secondActivationToTerminal": true
         ])
 
         // 1. Setup Main Menu (Crucial for Cmd+C, Cmd+V, Cmd+A in TextFields)

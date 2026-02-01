@@ -18,6 +18,7 @@ struct SettingsView: View {
     @AppStorage("globalShortcutKey") private var globalShortcutKey = "n"
     @AppStorage("globalShortcutModifier") private var globalShortcutModifier = "command"
     @AppStorage("globalShortcutAnywhere") private var globalShortcutAnywhere = false
+    @AppStorage("secondActivationToTerminal") private var secondActivationToTerminal = true
     
     @Environment(\.presentationMode) var presentationMode
 
@@ -37,6 +38,10 @@ struct SettingsView: View {
                 Toggle("System-wide (Global)", isOn: $globalShortcutAnywhere)
                     .toggleStyle(.switch)
                     .help("If enabled, the shortcut works from any app, not just Terminal.")
+                
+                Toggle("Second Activation to Terminal", isOn: $secondActivationToTerminal)
+                    .toggleStyle(.switch)
+                    .help("If enabled, pressing the shortcut again when search is focused will switch to Terminal.")
                 
                 HStack {
                     Picker("", selection: $globalShortcutModifier) {

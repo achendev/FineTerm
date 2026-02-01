@@ -346,6 +346,25 @@ struct ConnectionListView: View {
                 }
                 
                 if modifierMatch {
+                    // Check if second activation should switch to Terminal
+                    let secondActivationToTerminal = UserDefaults.standard.bool(forKey: "secondActivationToTerminal")
+                    
+                    // If search is already focused, settings closed, no editing - switch to Terminal
+                    if secondActivationToTerminal && self.isSearchFocused && !self.showSettings && self.selectedConnectionID == nil {
+                        DispatchQueue.main.async {
+                            // Activate Terminal.app
+                            if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Terminal" }) {
+                                terminalApp.activate(options: [.activateIgnoringOtherApps])
+                            } else {
+                                // Terminal not running - launch it
+                                if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
+                                    NSWorkspace.shared.openApplication(at: terminalURL, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
+                                }
+                            }
+                        }
+                        return nil // Swallow event
+                    }
+                    
                     // ACTION: Reset state and focus search
                     NSApp.keyWindow?.makeFirstResponder(nil)
                     

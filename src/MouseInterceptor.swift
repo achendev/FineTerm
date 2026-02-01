@@ -15,21 +15,26 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
 
     // 1. Handle Right Click -> Paste (Cmd+V)
     if type == .rightMouseDown {
-        print("DEBUG: Right Click detected. Pasting...")
-        
-        let source = CGEventSource(stateID: .hidSystemState)
-        let vKey: CGKeyCode = 9 // 'v'
-        
-        if let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
-           let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false) {
+        // Check Setting
+        if UserDefaults.standard.bool(forKey: "pasteOnRightClick") {
+            print("DEBUG: Right Click detected. Pasting...")
             
-            cmdDown.flags = .maskCommand
-            cmdUp.flags = .maskCommand
+            let source = CGEventSource(stateID: .hidSystemState)
+            let vKey: CGKeyCode = 9 // 'v'
             
-            cmdDown.post(tap: .cghidEventTap)
-            cmdUp.post(tap: .cghidEventTap)
+            if let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
+               let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false) {
+                
+                cmdDown.flags = .maskCommand
+                cmdUp.flags = .maskCommand
+                
+                cmdDown.post(tap: .cghidEventTap)
+                cmdUp.post(tap: .cghidEventTap)
+            }
+            return nil // Swallow the right click
         }
-        return nil // Swallow the right click
+        // If disabled, let the event pass through normally
+        return Unmanaged.passUnretained(event)
     }
     
     // 2. Track Mouse Down
@@ -40,6 +45,11 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
     
     // 3. Handle Left Mouse Up -> Copy (Cmd+C)
     if type == .leftMouseUp {
+        // Check Setting
+        if !UserDefaults.standard.bool(forKey: "copyOnSelect") {
+             return Unmanaged.passUnretained(event)
+        }
+
         let currentPoint = event.location
         // Calculate drag distance
         let dist = hypot(currentPoint.x - lastMouseDownPoint.x, currentPoint.y - lastMouseDownPoint.y)
@@ -109,7 +119,7 @@ class MouseInterceptor {
         if let rls = self.runLoopSource {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
-            print("Mouse Hook Active. (Drag > 5px OR Double Click to Copy)")
+            print("Mouse Hook Active.")
         }
     }
 

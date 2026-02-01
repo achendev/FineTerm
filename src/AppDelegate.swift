@@ -6,6 +6,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var mouseInterceptor: MouseInterceptor?
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        // 0. Register Default Settings (Enabled by default)
+        UserDefaults.standard.register(defaults: [
+            "copyOnSelect": true,
+            "pasteOnRightClick": true
+        ])
+
         // 1. CRITICAL: Force the app to be a regular "Foreground" app so it can accept keyboard input
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
@@ -14,7 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let contentView = ConnectionListView()
         
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 500),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         window.center()

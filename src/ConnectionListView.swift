@@ -45,9 +45,27 @@ struct ConnectionListView: View {
     @StateObject var store = ConnectionStore()
     @State private var newName = ""
     @State private var newCommand = ""
+    @State private var showSettings = false
     
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
+            // Header with Settings Button
+            HStack {
+                Text("Connections")
+                    .font(.headline)
+                Spacer()
+                Button(action: { showSettings = true }) {
+                    Image(systemName: "gear")
+                        .font(.system(size: 16))
+                }
+                .buttonStyle(.borderless)
+                .help("Settings")
+            }
+            .padding()
+            .background(Color(NSColor.controlBackgroundColor))
+
+            Divider()
+
             List {
                 ForEach(store.connections) { conn in
                     HStack {
@@ -84,6 +102,9 @@ struct ConnectionListView: View {
             }
             .padding()
             .background(Color(NSColor.controlBackgroundColor))
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
         }
     }
 }

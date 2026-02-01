@@ -52,24 +52,22 @@ class ConnectionStore: ObservableObject {
     }
     
     func deleteGroup(id: UUID) {
-        // 1. Move connections in this group to Ungrouped (nil)
         for i in 0..<connections.count {
             if connections[i].groupID == id {
                 connections[i].groupID = nil
             }
         }
-        // 2. Remove group
         groups.removeAll { $0.id == id }
         save()
     }
     
-    // --- Import / Export Helpers (Name-based) ---
+    // --- Import / Export Helpers ---
     
     func getSnapshot() -> ExportData {
-        // Map internal groups to export groups (UUID -> Name)
-        let expGroups = groups.map { ExportGroup(name: $0.name, isExpanded: $0.isExpanded) }
+        // Map groups (UUID -> Name), omit isExpanded
+        let expGroups = groups.map { ExportGroup(name: $0.name) }
         
-        // Map internal connections to export connections (GroupID -> GroupName)
+        // Map connections (GroupID -> GroupName)
         let expConnections = connections.map { conn -> ExportConnection in
             var groupName: String? = nil
             if let gID = conn.groupID, let g = groups.first(where: { $0.id == gID }) {
@@ -86,33 +84,30 @@ class ConnectionStore: ObservableObject {
         var newConnections: [Connection] = []
         var groupMap: [String: UUID] = [:]
         
-        // 1. Restore Groups (Ensure unique names for mapping)
+        // 1. Restore Groups (Ensure unique names, Default expanded = true)
         for g in data.groups {
             if groupMap[g.name] == nil {
-                let newG = ConnectionGroup(name: g.name, isExpanded: g.isExpanded)
+                let newG = ConnectionGroup(name: g.name, isExpanded: true)
                 newGroups.append(newG)
                 groupMap[g.name] = newG.id
             }
         }
         
-        // 2. Restore Connections (Link by Name)
+        // 2. Restore Connections
         for c in data.connections {
             var gID: UUID? = nil
             if let gName = c.group {
                 gID = groupMap[gName]
-                // Note: If the JSON references a group name that isn't in the 'groups' list,
-                // the connection will become Ungrouped (nil).
             }
             newConnections.append(Connection(groupID: gID, name: c.name, command: c.command))
         }
         
-        // Replace Store State
         self.groups = newGroups
         self.connections = newConnections
         save()
     }
     
-    // --- Persistence (Internal UUIDs) ---
+    // --- Persistence ---
     func save() {
         let data = StoreData(groups: groups, connections: connections)
         if let encoded = try? JSONEncoder().encode(data) {
@@ -122,17 +117,14 @@ class ConnectionStore: ObservableObject {
     
     func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
-        
         let decoder = JSONDecoder()
         
-        // 1. Try decoding new format
         if let storeData = try? decoder.decode(StoreData.self, from: data) {
             self.groups = storeData.groups
             self.connections = storeData.connections
             return
         }
         
-        // 2. Fallback: Try decoding old format (Array of Connections) and migrate
         if let oldConnections = try? decoder.decode([Connection].self, from: data) {
             self.connections = oldConnections
             self.groups = []

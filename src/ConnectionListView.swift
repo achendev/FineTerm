@@ -8,21 +8,18 @@ struct ConnectionListView: View {
     @State private var newName = ""
     @State private var newCommand = ""
     
-    // Group Creation
-    @State private var isCreatingGroup = false
-    @State private var newGroupName = ""
+    // UI State
+    @State private var showSettings = false
     @State private var groupToDelete: GroupAlertItem? = nil
     
-    @State private var showSettings = false
+    // Search & Focus
+    @State private var searchText = ""
+    @FocusState private var isSearchFocused: Bool
     
     // Import/Export State
     @State private var isImporting = false
     @State private var isExporting = false
     @State private var documentToExport: ConnectionsDocument?
-    
-    // Search & Focus
-    @State private var searchText = ""
-    @FocusState private var isSearchFocused: Bool
     
     // Interaction State
     @State private var highlightedConnectionID: UUID? = nil
@@ -32,21 +29,16 @@ struct ConnectionListView: View {
     
     @AppStorage("hideCommandInList") private var hideCommandInList = true
     
-    // MARK: - Computed Properties
-    
-    var allFilteredConnections: [Connection] {
-        if searchText.isEmpty {
-            return store.connections
-        } else {
+    // MARK: - Navigation Helpers (CRITICAL: Required for Keyboard Support)
+    // Returns the flat list of currently visible connections to support Up/Down arrow navigation
+    var visibleConnectionsForNav: [Connection] {
+        if !searchText.isEmpty {
             return store.connections.filter {
                 $0.name.localizedCaseInsensitiveContains(searchText) ||
                 $0.command.localizedCaseInsensitiveContains(searchText)
             }
         }
-    }
-    
-    var visibleConnectionsForNav: [Connection] {
-        if !searchText.isEmpty { return allFilteredConnections }
+        // When not searching, visually ordered list (Groups -> Children -> Ungrouped)
         var list: [Connection] = []
         for group in store.groups {
             if group.isExpanded {
@@ -56,14 +48,52 @@ struct ConnectionListView: View {
         list.append(contentsOf: store.connections.filter { $0.groupID == nil })
         return list
     }
-
+    
+    // MARK: - Body
     var body: some View {
         VStack(spacing: 0) {
-            headerView
+            ConnectionListHeader(
+                store: store,
+                searchText: $searchText,
+                showSettings: $showSettings,
+                isImporting: $isImporting,
+                isExporting: $isExporting,
+                documentToExport: $documentToExport,
+                isSearchFocused: $isSearchFocused
+            )
+            .onTapGesture { if selectedConnectionID != nil { resetForm() } }
+            // CRITICAL: Auto-select first result when searching
+            .onChange(of: searchText) { text in
+                if !text.isEmpty {
+                    let filtered = store.connections.filter {
+                        $0.name.localizedCaseInsensitiveContains(text) ||
+                        $0.command.localizedCaseInsensitiveContains(text)
+                    }
+                    if let first = filtered.first {
+                        highlightedConnectionID = first.id
+                    } else {
+                        highlightedConnectionID = nil
+                    }
+                } else {
+                    highlightedConnectionID = nil
+                }
+            }
+
             Divider()
-            mainListView
+            
+            mainScrollableList
+            
             Divider()
-            footerView
+            
+            ConnectionEditorView(
+                selectedID: $selectedConnectionID,
+                name: $newName,
+                command: $newCommand,
+                onSave: saveSelected,
+                onDelete: deleteSelected,
+                onAdd: addNew,
+                onCancel: resetForm
+            )
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
         .alert(item: $groupToDelete) { item in
@@ -74,131 +104,15 @@ struct ConnectionListView: View {
                 secondaryButton: .cancel()
             )
         }
-        // Import Handler (Decodes User-Friendly JSON)
-        .fileImporter(
-            isPresented: $isImporting,
-            allowedContentTypes: [.json],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first {
-                    guard url.startAccessingSecurityScopedResource() else { return }
-                    defer { url.stopAccessingSecurityScopedResource() }
-                    
-                    if let data = try? Data(contentsOf: url),
-                       let exportData = try? JSONDecoder().decode(ExportData.self, from: data) {
-                        store.restore(from: exportData)
-                    } else {
-                        print("Import failed: JSON format mismatch (Expected ExportData format)")
-                    }
-                }
-            case .failure(let error):
-                print("Import failed: \(error.localizedDescription)")
-            }
+        .fileImporter(isPresented: $isImporting, allowedContentTypes: [.json]) { result in
+            handleImport(result)
         }
-        // Export Handler
-        .fileExporter(
-            isPresented: $isExporting,
-            document: documentToExport,
-            contentType: .json,
-            defaultFilename: "mt_connections_backup"
-        ) { result in
-            if case .failure(let error) = result {
-                print("Export failed: \(error.localizedDescription)")
-            }
-        }
+        .fileExporter(isPresented: $isExporting, document: documentToExport, contentType: .json, defaultFilename: "mt_connections_backup") { _ in }
         .onAppear(perform: setupOnAppear)
     }
     
-    // MARK: - Subviews
-    
-    var headerView: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Connections").font(.headline)
-                Spacer()
-                
-                // Import/Export Menu
-                Menu {
-                    Button {
-                        isImporting = true
-                    } label: {
-                        Text("Import JSON...")
-                    }
-                    
-                    Button {
-                        // Generate Snapshot for Export
-                        documentToExport = ConnectionsDocument(exportData: store.getSnapshot())
-                        isExporting = true
-                    } label: {
-                        Text("Export JSON...")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.system(size: 16))
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .help("Import/Export")
-                .padding(.trailing, 8)
-
-                Button(action: { showSettings = true }) {
-                    Image(systemName: "gear").font(.system(size: 16))
-                }
-                .buttonStyle(.borderless)
-                .help("Settings")
-            }
-            .padding([.top, .horizontal])
-            .padding(.bottom, 8)
-            
-            TextField("Search profiles...", text: $searchText)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .focused($isSearchFocused)
-                .padding(.horizontal)
-                .onChange(of: searchText) { text in
-                    if text.isEmpty { highlightedConnectionID = nil }
-                    else if let first = allFilteredConnections.first { highlightedConnectionID = first.id }
-                }
-            
-            groupCreationBar
-        }
-        .background(Color(NSColor.controlBackgroundColor))
-        .onTapGesture { if selectedConnectionID != nil { resetForm() } }
-    }
-    
-    var groupCreationBar: some View {
-        Group {
-            if isCreatingGroup {
-                HStack {
-                    TextField("Group Name", text: $newGroupName)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .onSubmit { submitNewGroup() }
-                    
-                    Button(action: submitNewGroup) { Image(systemName: "checkmark") }
-                        .buttonStyle(.borderless)
-                    
-                    Button(action: { isCreatingGroup = false; newGroupName = "" }) { Image(systemName: "xmark") }
-                        .buttonStyle(.borderless)
-                }
-                .padding(.horizontal)
-                .padding(.top, 6)
-                .padding(.bottom, 8)
-            } else {
-                HStack {
-                    Button(action: { isCreatingGroup = true }) {
-                        HStack(spacing: 4) { Image(systemName: "plus.folder"); Text("New Group") }
-                            .font(.caption).foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.borderless)
-                    Spacer()
-                }
-                .padding(.horizontal).padding(.top, 4).padding(.bottom, 8)
-            }
-        }
-    }
-    
-    var mainListView: some View {
+    // MARK: - List Rendering
+    var mainScrollableList: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
@@ -221,115 +135,56 @@ struct ConnectionListView: View {
     
     var searchResultList: some View {
         Group {
-            ForEach(allFilteredConnections) { conn in
-                renderRow(conn)
+            let filtered = store.connections.filter {
+                $0.name.localizedCaseInsensitiveContains(searchText) ||
+                $0.command.localizedCaseInsensitiveContains(searchText)
             }
-            if allFilteredConnections.isEmpty {
+            ForEach(filtered) { conn in renderRow(conn) }
+            if filtered.isEmpty {
                 Text("No matching profiles").foregroundColor(.gray).padding()
             }
         }
     }
     
     var groupedConnectionList: some View {
-        Group {
-            ForEach(store.groups) { group in
-                GroupSectionView(
-                    group: group,
-                    connections: store.connections.filter { $0.groupID == group.id },
-                    highlightedID: highlightedConnectionID,
-                    selectedID: selectedConnectionID,
-                    hideCommand: hideCommandInList,
-                    searchText: searchText,
-                    onToggleExpand: { store.toggleGroupExpansion($0) },
-                    onDeleteGroup: { id in groupToDelete = GroupAlertItem(id: id) },
-                    onMoveConnection: { store.moveConnection($0, toGroup: $1) },
-                    onRowTap: handleRowTap,
-                    onRowConnect: launchConnection
-                )
-            }
-            ungroupedSection
+        ForEach(store.groups) { group in
+            GroupSectionView(
+                group: group,
+                connections: store.connections.filter { $0.groupID == group.id },
+                highlightedID: highlightedConnectionID,
+                selectedID: selectedConnectionID,
+                hideCommand: hideCommandInList,
+                searchText: searchText,
+                onToggleExpand: { store.toggleGroupExpansion($0) },
+                onDeleteGroup: { id in groupToDelete = GroupAlertItem(id: id) },
+                onMoveConnection: { store.moveConnection($0, toGroup: $1) },
+                onRowTap: handleRowTap,
+                onRowConnect: launchConnection
+            )
         }
     }
     
     var ungroupDropArea: some View {
-        // DROP TARGET: Ungroup (Move to Root)
-        Spacer(minLength: 50)
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .onDrop(of: [UTType.text, UTType.plainText], isTargeted: nil) { providers in
-                if UserDefaults.standard.bool(forKey: "debugMode") {
-                    print("DEBUG: DROP EVENT - Ungroup Area")
-                }
-                guard let item = providers.first else { return false }
-                item.loadObject(ofClass: NSString.self) { (object, error) in
-                    if let idStr = object as? String, let uuid = UUID(uuidString: idStr) {
-                        DispatchQueue.main.async { store.moveConnection(uuid, toGroup: nil) }
-                    }
-                }
-                return true
-            }
-    }
-    
-    var ungroupedSection: some View {
-        let ungrouped = store.connections.filter { $0.groupID == nil }
-        
-        return Group {
-            ForEach(ungrouped) { conn in
-                renderRow(conn)
-            }
-        }
-    }
-    
-    var footerView: some View {
-        VStack(alignment: .leading) {
-            HStack {
-                Text(selectedConnectionID == nil ? "New Connection" : "Edit Connection")
-                    .font(.headline)
-                Spacer()
-                if selectedConnectionID != nil {
-                    Button("Cancel") { resetForm() }
-                        .buttonStyle(.link).font(.caption)
-                }
-            }
-
-            TextField("Name (e.g. Prod DB)", text: $newName)
-            TextField("Command (e.g. ssh user@1.2.3.4)", text: $newCommand)
+        VStack(spacing: 0) {
+            let ungrouped = store.connections.filter { $0.groupID == nil }
+            ForEach(ungrouped) { conn in renderRow(conn) }
             
-            if let selectedID = selectedConnectionID {
-                HStack(spacing: 12) {
-                    Button("Save") {
-                        store.update(id: selectedID, name: newName, command: newCommand)
-                        resetForm()
-                    }
-                    .disabled(newName.isEmpty || newCommand.isEmpty)
-                    .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: .infinity)
-                    
-                    Button("Delete") {
-                        store.delete(id: selectedID)
-                        resetForm()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .frame(maxWidth: .infinity)
-                }
-            } else {
-                Button("Add Connection") {
-                    if !newName.isEmpty && !newCommand.isEmpty {
-                        store.add(name: newName, command: newCommand)
-                        resetForm()
-                    }
-                }
-                .disabled(newName.isEmpty || newCommand.isEmpty)
+            // Drop target for moving to root
+            Spacer(minLength: 50)
                 .frame(maxWidth: .infinity)
-            }
+                .contentShape(Rectangle())
+                .onDrop(of: [UTType.text, UTType.plainText], isTargeted: nil) { providers in
+                    guard let item = providers.first else { return false }
+                    item.loadObject(ofClass: NSString.self) { (object, error) in
+                        if let idStr = object as? String, let uuid = UUID(uuidString: idStr) {
+                            DispatchQueue.main.async { store.moveConnection(uuid, toGroup: nil) }
+                        }
+                    }
+                    return true
+                }
         }
-        .padding()
-        .background(Color(NSColor.controlBackgroundColor))
     }
-    
-    // MARK: - Logic Helpers
-    
+
     func renderRow(_ conn: Connection) -> some View {
         ConnectionRowView(
             connection: conn,
@@ -341,15 +196,8 @@ struct ConnectionListView: View {
             onConnect: { launchConnection(conn) }
         )
     }
-    
-    func submitNewGroup() {
-        if !newGroupName.isEmpty {
-            store.addGroup(name: newGroupName)
-            newGroupName = ""
-            isCreatingGroup = false
-        }
-    }
-    
+
+    // MARK: - Actions
     func handleRowTap(_ conn: Connection) {
         let now = Date()
         if lastClickedID == conn.id && now.timeIntervalSince(lastClickTime) < 0.3 {
@@ -373,6 +221,27 @@ struct ConnectionListView: View {
         highlightedConnectionID = nil
     }
     
+    func saveSelected() {
+        if let id = selectedConnectionID {
+            store.update(id: id, name: newName, command: newCommand)
+            resetForm()
+        }
+    }
+    
+    func deleteSelected() {
+        if let id = selectedConnectionID {
+            store.delete(id: id)
+            resetForm()
+        }
+    }
+    
+    func addNew() {
+        if !newName.isEmpty && !newCommand.isEmpty {
+            store.add(name: newName, command: newCommand)
+            resetForm()
+        }
+    }
+    
     func resetForm() {
         newName = ""
         newCommand = ""
@@ -380,30 +249,45 @@ struct ConnectionListView: View {
         lastClickedID = nil
     }
     
+    func handleImport(_ result: Result<URL, Error>) {
+        if case .success(let url) = result {
+            guard url.startAccessingSecurityScopedResource() else { return }
+            defer { url.stopAccessingSecurityScopedResource() }
+            if let data = try? Data(contentsOf: url),
+               let exportData = try? JSONDecoder().decode(ExportData.self, from: data) {
+                store.restore(from: exportData)
+            }
+        }
+    }
+    
     func setupOnAppear() {
         highlightedConnectionID = nil
+        
+        // Ensure Search Field gets focus on active
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 self.isSearchFocused = true
             }
         }
         
+        // CRITICAL: Keyboard Navigation Implementation
+        // Handles Up/Down/Enter global events when app is active
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard !showSettings else { return event }
             let currentList = visibleConnectionsForNav
             
             switch event.keyCode {
-            case 125: // Down
+            case 125: // Arrow Down
                 if let current = highlightedConnectionID,
                    let idx = currentList.firstIndex(where: { $0.id == current }) {
                     let nextIdx = min(idx + 1, currentList.count - 1)
                     highlightedConnectionID = currentList[nextIdx].id
-                    return nil
+                    return nil // Stop propagation
                 } else if !currentList.isEmpty {
                     highlightedConnectionID = currentList[0].id
                     return nil
                 }
-            case 126: // Up
+            case 126: // Arrow Up
                 if let current = highlightedConnectionID,
                    let idx = currentList.firstIndex(where: { $0.id == current }) {
                     let prevIdx = max(idx - 1, 0)

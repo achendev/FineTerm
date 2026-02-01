@@ -29,11 +29,10 @@ struct StoreData: Codable {
 }
 
 // MARK: - Export/Import Models (User Friendly)
-// These structs define the JSON format for Import/Export (No UUIDs)
 
 struct ExportGroup: Codable {
     var name: String
-    var isExpanded: Bool
+    // isExpanded removed for cleaner JSON; defaults to true on import
 }
 
 struct ExportConnection: Codable {

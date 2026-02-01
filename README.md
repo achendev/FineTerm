@@ -6,12 +6,15 @@ NativeTab is a lightweight, native Swift application designed to supercharge the
 
 It does not replace Terminal.app—it **wraps** it with a powerful session manager and injects nostalgic PuTTY-style "Pro" input behaviors that Unix and Windows admins have missed for years.
 
+<img width="700" alt="NativeTab" src="https://github.com/user-attachments/assets/5aa439ff-e1d0-40d3-a25c-f6bb0ba5b68a" />
+
+
 ## Why NativeTab?
 
-Most terminal replacements (Hyper, Alacritty, iTerm) require you to abandon the highly optimized, battery-friendly native macOS Terminal. 
+Most terminal replacements (Hyper, Alacritty, iTerm, Tabby) require you to abandon the highly optimized, battery-friendly native macOS Terminal. 
 
 **NativeTab is different:**
-1.  **Native Performance:** You still use the actual Terminal.app. We just automate it.
+1.  **Native Performance:** You still use the actual Terminal.app. Now it's just automated.
 2.  **Unix/Windows Mouse Behavior:** Finally brings **"Copy on Select"** (PuTTY/Linux style) and **"Paste on Right Click"** to the native Mac Terminal.
 3.  **Focus Flow:** A seamless Global Hotkey system allows you to toggle between your connection list and your active terminal instantly.
 4.  **Zero Bloat:** Written in pure Swift. No Electron, no Python, no heavy dependencies. 5MB memory footprint.
@@ -77,6 +80,8 @@ This project is a raw Swift codebase. You don't need Xcode to build it, just the
 *   **Connect:** Click the "Play" icon or press `Enter` on a highlighted row.
 *   **Search:** Just start typing. The list filters automatically with smart multi-word matching. Use `Up`/`Down` arrows to navigate and `Enter` to connect.
 
+<img height="500" alt="NativeTab Search" src="https://github.com/user-attachments/assets/b76a072d-3aad-4341-adfe-568a48442f57" />
+
 ### Keyboard Shortcuts
 | Context | Shortcut | Action |
 | :--- | :--- | :--- |
@@ -87,6 +92,9 @@ This project is a raw Swift codebase. You don't need Xcode to build it, just the
 
 ### Settings
 Click the ⚙️ icon to configure:
+
+<img width="360" alt="NatievTab Settings" src="https://github.com/user-attachments/assets/28ca2698-4116-4405-93a7-7c08412ee8cb" />
+
 
 **Global Activation Shortcut:**
 *   **Modifier + Key:** Choose Command, Control, or Option plus any key.

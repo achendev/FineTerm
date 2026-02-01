@@ -60,6 +60,9 @@ struct ConnectionListView: View {
     @State private var newCommand = ""
     @State private var showSettings = false
     
+    // Search State
+    @State private var searchText = ""
+    
     // UI Settings
     @AppStorage("hideCommandInList") private var hideCommandInList = true
     
@@ -70,25 +73,46 @@ struct ConnectionListView: View {
     @State private var lastClickTime: Date = Date.distantPast
     @State private var lastClickedID: UUID? = nil
     
+    var filteredConnections: [Connection] {
+        if searchText.isEmpty {
+            return store.connections
+        } else {
+            return store.connections.filter {
+                $0.name.localizedCaseInsensitiveContains(searchText) ||
+                $0.command.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
-            // Header with Settings Button
-            HStack {
-                Text("Connections")
-                    .font(.headline)
-                Spacer()
-                Button(action: { showSettings = true }) {
-                    Image(systemName: "gear")
-                        .font(.system(size: 16))
+            // Header Area (Title + Search)
+            VStack(spacing: 0) {
+                // Top Row: Title + Settings
+                HStack {
+                    Text("Connections")
+                        .font(.headline)
+                    Spacer()
+                    Button(action: { showSettings = true }) {
+                        Image(systemName: "gear")
+                            .font(.system(size: 16))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Settings")
                 }
-                .buttonStyle(.borderless)
-                .help("Settings")
+                .padding([.top, .horizontal])
+                .padding(.bottom, 8)
+                
+                // Search Bar
+                TextField("Search profiles...", text: $searchText)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .padding(.horizontal)
+                    .padding(.bottom, 10)
             }
-            .padding()
             .background(Color(NSColor.controlBackgroundColor))
             .contentShape(Rectangle()) 
             .onTapGesture {
-                // Clicking header cancels edit
+                // Clicking header background cancels edit
                 if selectedConnectionID != nil {
                     resetForm()
                 }
@@ -99,7 +123,7 @@ struct ConnectionListView: View {
             // List Area
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(store.connections) { conn in
+                    ForEach(filteredConnections) { conn in
                         VStack(spacing: 0) {
                             HStack(spacing: 0) {
                                 // --- INTERACTIVE ROW AREA ---
@@ -126,7 +150,8 @@ struct ConnectionListView: View {
                                                 .font(.headline)
                                                 .foregroundColor(selectedConnectionID == conn.id ? .accentColor : .primary)
                                             
-                                            if !hideCommandInList {
+                                            // Highlight match in command if searching
+                                            if !hideCommandInList || !searchText.isEmpty {
                                                 Text(conn.command)
                                                     .font(.caption)
                                                     .foregroundColor(.gray)
@@ -157,6 +182,12 @@ struct ConnectionListView: View {
                             
                             Divider()
                         }
+                    }
+                    
+                    if filteredConnections.isEmpty && !searchText.isEmpty {
+                        Text("No matching profiles")
+                            .foregroundColor(.gray)
+                            .padding()
                     }
                 }
                 .frame(maxWidth: .infinity)

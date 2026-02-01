@@ -22,8 +22,21 @@ class ConnectionStore: ObservableObject {
         save()
     }
     
+    func update(id: UUID, name: String, command: String) {
+        if let index = connections.firstIndex(where: { $0.id == id }) {
+            connections[index].name = name
+            connections[index].command = command
+            save()
+        }
+    }
+    
     func remove(at offsets: IndexSet) {
         connections.remove(atOffsets: offsets)
+        save()
+    }
+    
+    func delete(id: UUID) {
+        connections.removeAll { $0.id == id }
         save()
     }
     
@@ -46,6 +59,9 @@ struct ConnectionListView: View {
     @State private var newName = ""
     @State private var newCommand = ""
     @State private var showSettings = false
+    
+    // State to track if we are editing a connection
+    @State private var selectedConnectionID: UUID? = nil
     
     var body: some View {
         VStack(spacing: 0) {
@@ -70,12 +86,30 @@ struct ConnectionListView: View {
                 ForEach(store.connections) { conn in
                     HStack {
                         VStack(alignment: .leading) {
-                            Text(conn.name).font(.headline)
-                            Text(conn.command).font(.caption).foregroundColor(.gray)
+                            Text(conn.name)
+                                .font(.headline)
+                                .foregroundColor(selectedConnectionID == conn.id ? .accentColor : .primary)
+                            Text(conn.command)
+                                .font(.caption)
+                                .foregroundColor(.gray)
                         }
+                        .contentShape(Rectangle()) // Make text area clickable
+                        .onTapGesture {
+                            // Populate fields for editing
+                            selectedConnectionID = conn.id
+                            newName = conn.name
+                            newCommand = conn.command
+                        }
+                        
                         Spacer()
+                        
                         Button("Connect") {
-                            TerminalBridge.launch(command: conn.command)
+                            // Inject Prefix and Suffix here
+                            let prefix = UserDefaults.standard.string(forKey: "commandPrefix") ?? ""
+                            let suffix = UserDefaults.standard.string(forKey: "commandSuffix") ?? ""
+                            let finalCommand = prefix + conn.command + suffix
+                            
+                            TerminalBridge.launch(command: finalCommand)
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -87,18 +121,53 @@ struct ConnectionListView: View {
             Divider()
             
             VStack(alignment: .leading) {
-                Text("New Connection").font(.headline)
-                TextField("Name (e.g. Prod DB)", text: $newName)
-                TextField("Command (e.g. ssh user@1.2.3.4)", text: $newCommand)
-                Button("Add Connection") {
-                    if !newName.isEmpty && !newCommand.isEmpty {
-                        store.add(name: newName, command: newCommand)
-                        newName = ""
-                        newCommand = ""
+                HStack {
+                    Text(selectedConnectionID == nil ? "New Connection" : "Edit Connection")
+                        .font(.headline)
+                    Spacer()
+                    // Cancel button to exit edit mode easily
+                    if selectedConnectionID != nil {
+                        Button("Cancel") {
+                            resetForm()
+                        }
+                        .buttonStyle(.link)
+                        .font(.caption)
                     }
                 }
-                .disabled(newName.isEmpty || newCommand.isEmpty)
-                .frame(maxWidth: .infinity)
+
+                TextField("Name (e.g. Prod DB)", text: $newName)
+                TextField("Command (e.g. ssh user@1.2.3.4)", text: $newCommand)
+                
+                if let selectedID = selectedConnectionID {
+                    // Edit Mode: Save and Delete buttons
+                    HStack {
+                        Button("Save") {
+                            if !newName.isEmpty && !newCommand.isEmpty {
+                                store.update(id: selectedID, name: newName, command: newCommand)
+                                resetForm()
+                            }
+                        }
+                        .disabled(newName.isEmpty || newCommand.isEmpty)
+                        .frame(maxWidth: .infinity)
+                        
+                        Button("Delete") {
+                            store.delete(id: selectedID)
+                            resetForm()
+                        }
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity)
+                    }
+                } else {
+                    // Add Mode
+                    Button("Add Connection") {
+                        if !newName.isEmpty && !newCommand.isEmpty {
+                            store.add(name: newName, command: newCommand)
+                            resetForm()
+                        }
+                    }
+                    .disabled(newName.isEmpty || newCommand.isEmpty)
+                    .frame(maxWidth: .infinity)
+                }
             }
             .padding()
             .background(Color(NSColor.controlBackgroundColor))
@@ -106,5 +175,11 @@ struct ConnectionListView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
+    }
+    
+    private func resetForm() {
+        newName = ""
+        newCommand = ""
+        selectedConnectionID = nil
     }
 }

@@ -5,6 +5,10 @@ struct SettingsView: View {
     @AppStorage("pasteOnRightClick") private var pasteOnRightClick = true
     @AppStorage("debugMode") private var debugMode = false
     
+    // Command Injection Settings
+    @AppStorage("commandPrefix") private var commandPrefix = "unset HISTFILE ; clear ; "
+    @AppStorage("commandSuffix") private var commandSuffix = " && exit"
+    
     @Environment(\.presentationMode) var presentationMode
 
     var body: some View {
@@ -14,40 +18,43 @@ struct SettingsView: View {
             
             Divider()
             
-            // Group 1: Copy on Select
-            VStack(alignment: .leading, spacing: 6) {
+            // Group 1: Command Wrappers (New)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Command Execution Wrappers")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Prefix (Pre-pended to command):")
+                        .font(.caption)
+                    TextField("e.g. unset HISTFILE ; ", text: $commandPrefix)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Suffix (Appended to command):")
+                        .font(.caption)
+                    TextField("e.g. && exit", text: $commandSuffix)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                }
+            }
+            
+            Divider()
+            
+            // Group 2: Mouse Behavior
+            VStack(alignment: .leading, spacing: 10) {
                 Toggle("Copy on Select", isOn: $copyOnSelect)
                     .toggleStyle(.switch)
                 
-                Text("Automatically copies text when selected via mouse drag or double/triple click.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true) // Allow text to wrap
-            }
-            
-            // Group 2: Paste on Right Click
-            VStack(alignment: .leading, spacing: 6) {
                 Toggle("Paste on Right Click", isOn: $pasteOnRightClick)
                     .toggleStyle(.switch)
-                
-                Text("Simulates Cmd+V when right-clicking in Terminal.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Divider()
 
             // Group 3: Debug Mode
-            VStack(alignment: .leading, spacing: 6) {
-                Toggle("Debug Mode", isOn: $debugMode)
-                    .toggleStyle(.switch)
-                
-                Text("Enable verbose logging to standard output for troubleshooting.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Toggle("Debug Mode", isOn: $debugMode)
+                .toggleStyle(.switch)
             
             Spacer()
             
@@ -58,7 +65,7 @@ struct SettingsView: View {
             .keyboardShortcut(.defaultAction)
         }
         .padding()
-        // Increased frame size to fit new option and prevent clipping
-        .frame(width: 350, height: 380)
+        // Increased frame size to fit new fields
+        .frame(width: 350, height: 500)
     }
 }

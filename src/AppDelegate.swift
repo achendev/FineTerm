@@ -10,7 +10,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.register(defaults: [
             "copyOnSelect": true,
             "pasteOnRightClick": true,
-            "debugMode": false
+            "debugMode": false,
+            // Default Wrappers
+            "commandPrefix": "unset HISTFILE ; clear ; ",
+            "commandSuffix": " && exit"
         ])
 
         // 1. CRITICAL: Force the app to be a regular "Foreground" app so it can accept keyboard input

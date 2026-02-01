@@ -60,6 +60,9 @@ struct ConnectionListView: View {
     @State private var newCommand = ""
     @State private var showSettings = false
     
+    // UI Settings
+    @AppStorage("hideCommandInList") private var hideCommandInList = true
+    
     // State to track if we are editing a connection
     @State private var selectedConnectionID: UUID? = nil
     
@@ -89,9 +92,13 @@ struct ConnectionListView: View {
                             Text(conn.name)
                                 .font(.headline)
                                 .foregroundColor(selectedConnectionID == conn.id ? .accentColor : .primary)
-                            Text(conn.command)
-                                .font(.caption)
-                                .foregroundColor(.gray)
+                            
+                            // Conditionally show/hide the command
+                            if !hideCommandInList {
+                                Text(conn.command)
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                            }
                         }
                         .contentShape(Rectangle()) // Make text area clickable
                         .onTapGesture {
@@ -139,8 +146,8 @@ struct ConnectionListView: View {
                 TextField("Command (e.g. ssh user@1.2.3.4)", text: $newCommand)
                 
                 if let selectedID = selectedConnectionID {
-                    // Edit Mode: Save and Delete buttons
-                    HStack {
+                    // Edit Mode: Save (Blue) and Delete (Red) buttons
+                    HStack(spacing: 12) {
                         Button("Save") {
                             if !newName.isEmpty && !newCommand.isEmpty {
                                 store.update(id: selectedID, name: newName, command: newCommand)
@@ -148,13 +155,15 @@ struct ConnectionListView: View {
                             }
                         }
                         .disabled(newName.isEmpty || newCommand.isEmpty)
+                        .buttonStyle(.borderedProminent) // Blue by default
                         .frame(maxWidth: .infinity)
                         
                         Button("Delete") {
                             store.delete(id: selectedID)
                             resetForm()
                         }
-                        .foregroundColor(.red)
+                        .buttonStyle(.borderedProminent) // Filled button
+                        .tint(.red)                      // Painted Red
                         .frame(maxWidth: .infinity)
                     }
                 } else {

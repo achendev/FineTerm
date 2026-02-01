@@ -13,7 +13,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "debugMode": false,
             // Default Wrappers
             "commandPrefix": "unset HISTFILE ; clear ; ",
-            "commandSuffix": " && exit"
+            "commandSuffix": " && exit",
+            // UI Defaults
+            "hideCommandInList": true
         ])
 
         // 1. CRITICAL: Force the app to be a regular "Foreground" app so it can accept keyboard input

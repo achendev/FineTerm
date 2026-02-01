@@ -9,6 +9,9 @@ struct SettingsView: View {
     @AppStorage("commandPrefix") private var commandPrefix = "unset HISTFILE ; clear ; "
     @AppStorage("commandSuffix") private var commandSuffix = " && exit"
     
+    // UI Settings
+    @AppStorage("hideCommandInList") private var hideCommandInList = true
+    
     @Environment(\.presentationMode) var presentationMode
 
     var body: some View {
@@ -18,7 +21,7 @@ struct SettingsView: View {
             
             Divider()
             
-            // Group 1: Command Wrappers (New)
+            // Group 1: Command Wrappers
             VStack(alignment: .leading, spacing: 8) {
                 Text("Command Execution Wrappers")
                     .font(.subheadline)
@@ -41,7 +44,11 @@ struct SettingsView: View {
             
             Divider()
             
-            // Group 2: Mouse Behavior
+            // Group 2: UI Preferences
+            Toggle("Hide Command in List", isOn: $hideCommandInList)
+                .toggleStyle(.switch)
+            
+            // Group 3: Mouse Behavior
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("Copy on Select", isOn: $copyOnSelect)
                     .toggleStyle(.switch)
@@ -52,7 +59,7 @@ struct SettingsView: View {
 
             Divider()
 
-            // Group 3: Debug Mode
+            // Group 4: Debug Mode
             Toggle("Debug Mode", isOn: $debugMode)
                 .toggleStyle(.switch)
             
@@ -65,7 +72,6 @@ struct SettingsView: View {
             .keyboardShortcut(.defaultAction)
         }
         .padding()
-        // Increased frame size to fit new fields
-        .frame(width: 350, height: 500)
+        .frame(width: 350, height: 550)
     }
 }

@@ -259,7 +259,10 @@ struct ConnectionListView: View {
         
         // Build terminal name prefix if enabled
         let changeTerminalName = UserDefaults.standard.bool(forKey: "changeTerminalName")
-        let terminalNamePrefix = changeTerminalName ? "printf '\\033]0;\(conn.name)\\007'; clear; " : ""
+        
+        // NEW LOGIC: Run in background with sleep to allow SSH/Command to start before setting title
+        // Using printf \e]1;... requires escapes for Swift string
+        let terminalNamePrefix = changeTerminalName ? "{ sleep 2 ; printf '\\e]1;%s\\a' '\(conn.name)' ; } & " : ""
         
         // Get prefix/suffix from settings
         var prefix = conn.usePrefix ? (UserDefaults.standard.string(forKey: "commandPrefix") ?? "") : ""

@@ -128,8 +128,9 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
                 print("DEBUG: Selection Detected (Drag: \(Int(dist))px, Clicks: \(clickCount)). Queuing Copy...")
             }
             
-            // Wait 0.25s for Terminal to finalize the visual selection
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            // Wait 0.01s (reduced from 0.25s) for Terminal to finalize the visual selection
+            // This ensures it feels "instant" (10ms) but is reliably processed after selection logic.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
                 // Ensure Terminal is still focused
                 if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.Terminal" {
                     

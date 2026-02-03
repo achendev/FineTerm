@@ -284,6 +284,9 @@ struct ConnectionListView: View {
     
     func saveSelected() {
         if let id = selectedConnectionID {
+            // Validation: Do not save if fields are empty
+            if newName.isEmpty || newCommand.isEmpty { return }
+            
             store.update(id: id, name: newName, command: newCommand, groupID: newGroupID, usePrefix: newUsePrefix, useSuffix: newUseSuffix)
             resetForm()
         }
@@ -423,8 +426,14 @@ struct ConnectionListView: View {
                     return nil
                 }
             case 36: // Enter
-                if selectedConnectionID == nil, let current = highlightedConnectionID,
+                if let current = highlightedConnectionID,
                    let conn = currentList.first(where: { $0.id == current }) {
+                    
+                    // If we are currently editing something, save it first
+                    if self.selectedConnectionID != nil {
+                        self.saveSelected()
+                    }
+                    
                     // Delay launch to ensure Enter key is fully released
                     // before Terminal becomes active. This prevents the first Enter 
                     // in Terminal from being ignored.

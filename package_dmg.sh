@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-APP_NAME="NativeTab"
+APP_NAME="FineTerm"
 APP_BUNDLE="$APP_NAME.app"
 DMG_NAME="${APP_NAME}.dmg"
 VOL_NAME="$APP_NAME"
@@ -28,8 +28,8 @@ ln -s /Applications dist/Applications
 hdiutil create -volname "$VOL_NAME" -srcfolder dist -ov -format UDZO "temp.dmg"
 
 # Cleanup dist safely
-mkdir -p /tmp/nativetab_trash
-mv dist "/tmp/nativetab_trash/dist_$(date +%s)"
+mkdir -p /tmp/FineTerm_trash
+mv dist "/tmp/FineTerm_trash/dist_$(date +%s)"
 
 # Finalize name
 mv "temp.dmg" "$DMG_NAME"

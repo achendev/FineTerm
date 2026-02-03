@@ -169,12 +169,12 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     if modifierMatch && event.getIntegerValueField(.keyboardEventKeycode) == Int64(targetKeyCode) {
         // MATCH DETECTED! This is the global shortcut.
         
-        // If NativeTab is already active, pass through to let local monitor handle it
+        // If FineTerm is already active, pass through to let local monitor handle it
         if NSApp.isActive {
             return Unmanaged.passUnretained(event)
         }
         
-        // Otherwise, activate NativeTab and show window
+        // Otherwise, activate FineTerm and show window
         DispatchQueue.main.async {
             // Get the app delegate to access the window
             if let appDelegate = NSApp.delegate as? AppDelegate,

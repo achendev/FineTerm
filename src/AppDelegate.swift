@@ -41,7 +41,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false  // Keep window alive when closed
         window.center()
         window.setFrameAutosaveName("Main Window")
-        window.title = "NativeTab"
+        window.title = "FineTerm"
         
         checkPermissionsAndStart()
     }
@@ -83,7 +83,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         keyboardInterceptor = KeyboardInterceptor()
         keyboardInterceptor?.start()
         
-        print("NativeTab Started")
+        print("FineTerm Started")
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
@@ -111,15 +111,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupMainMenu() {
         let mainMenu = NSMenu()
 
-        // 1. App Menu (NativeTab)
+        // 1. App Menu (FineTerm)
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
         
-        appMenu.addItem(withTitle: "About NativeTab", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About FineTerm", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Quit NativeTab", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit FineTerm", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         // 2. Edit Menu (Cut, Copy, Paste, Select All)
         let editMenuItem = NSMenuItem()

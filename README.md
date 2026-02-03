@@ -1,29 +1,29 @@
-# NativeTab
+# FineTerm
 
 <p align="center">
-  <a href="https://github.com/achendev/NativeTab/releases">
-    <img src="https://img.shields.io/github/downloads/achendev/NativeTab/total.svg" alt="Total Downloads">
+  <a href="https://github.com/achendev/FineTerm/releases">
+    <img src="https://img.shields.io/github/downloads/achendev/FineTerm/total.svg" alt="Total Downloads">
   </a>
-  <a href="https://github.com/achendev/NativeTab">
-    <img src="https://img.shields.io/github/stars/achendev/NativeTab?style=social" alt="Star on GitHub">
+  <a href="https://github.com/achendev/FineTerm">
+    <img src="https://img.shields.io/github/stars/achendev/FineTerm?style=social" alt="Star on GitHub">
   </a>
 </p>
 
 **The missing Connection Manager and Input Enhancer for macOS Terminal.**
 
-NativeTab is a lightweight, native Swift application designed to supercharge the stock macOS Terminal.app. It bridges the gap between the native terminal experience and the advanced session management features found in heavy third-party emulators like iTerm2 or SecureCRT.
+FineTerm is a lightweight, native Swift application designed to supercharge the stock macOS Terminal.app. It bridges the gap between the native terminal experience and the advanced session management features found in heavy third-party emulators like iTerm2 or SecureCRT.
 
 It does not replace Terminal.app—it **wraps** it with a powerful session manager and injects nostalgic PuTTY-style "Pro" input behaviors that Unix and Windows admins have missed for years.
 
 <p align="center">
-<img width="700" alt="NativeTab" src="https://github.com/user-attachments/assets/5aa439ff-e1d0-40d3-a25c-f6bb0ba5b68a" />
+<img width="700" alt="FineTerm" src="https://github.com/user-attachments/assets/5aa439ff-e1d0-40d3-a25c-f6bb0ba5b68a" />
 </p>
 
-## Why NativeTab?
+## Why FineTerm?
 
 Most terminal replacements (Hyper, Alacritty, iTerm, Tabby) require you to abandon the highly optimized, battery-friendly native macOS Terminal. 
 
-**NativeTab is different:**
+**FineTerm is different:**
 1.  **Native Performance:** You still use the actual Terminal.app. Now it's just automated.
 2.  **Unix/Windows Mouse Behavior:** Finally brings **"Copy on Select"** (PuTTY/Linux style) and **"Paste on Right Click"** to the native Mac Terminal.
 3.  **Focus Flow:** A seamless Global Hotkey system allows you to toggle between your connection list and your active terminal instantly.
@@ -48,8 +48,8 @@ Most terminal replacements (Hyper, Alacritty, iTerm, Tabby) require you to aband
 ### 3. The "Focus Loop"
 *   **Configurable Global Hotkey (Default: `Cmd+N`):** 
     *   **From Terminal:** Press the hotkey to instantly bring the Connection List to the front.
-    *   **System-wide Mode:** Optionally enable global mode to activate NativeTab from any application.
-    *   **Second Activation:** When NativeTab is already focused, pressing the hotkey again instantly switches back to Terminal—perfect for quick glances at your connection list.
+    *   **System-wide Mode:** Optionally enable global mode to activate FineTerm from any application.
+    *   **Second Activation:** When FineTerm is already focused, pressing the hotkey again instantly switches back to Terminal—perfect for quick glances at your connection list.
 *   Select your server, hit Enter, and it launches a new tab in your existing Terminal window.
 
 ---
@@ -63,12 +63,12 @@ This project is a raw Swift codebase. You don't need Xcode to build it, just the
     chmod +x build.sh
     ./build.sh
     ```
-    This creates the app bundle at `./NativeTab.app`.
+    This creates the app bundle at `./FineTerm.app`.
 
 2.  **Run:**
-    Double-click `NativeTab.app` or run from terminal:
+    Double-click `FineTerm.app` or run from terminal:
     ```bash
-    open NativeTab.app
+    open FineTerm.app
     ```
 
 3.  **⚠️ CRITICAL: Accessibility Permissions**
@@ -76,8 +76,8 @@ This project is a raw Swift codebase. You don't need Xcode to build it, just the
     
     1.  On first launch, the app will check for permissions.
     2.  Go to **System Settings -> Privacy & Security -> Accessibility**.
-    3.  If `NativeTab` is in the list, enable the toggle.
-    4.  If not, drag the `NativeTab.app` file into the list manually.
+    3.  If `FineTerm` is in the list, enable the toggle.
+    4.  If not, drag the `FineTerm.app` file into the list manually.
     5.  **Restart the app.**
 
 ---
@@ -91,16 +91,16 @@ This project is a raw Swift codebase. You don't need Xcode to build it, just the
 *   **Search:** Just start typing. The list filters automatically with smart multi-word matching. Use `Up`/`Down` arrows to navigate and `Enter` to connect.
 
 <p align="center">
-<img height="500" alt="NativeTab Search" src="https://github.com/user-attachments/assets/b76a072d-3aad-4341-adfe-568a48442f57" />
+<img height="500" alt="FineTerm Search" src="https://github.com/user-attachments/assets/b76a072d-3aad-4341-adfe-568a48442f57" />
 </p>
 
 ### Keyboard Shortcuts
 | Context | Shortcut | Action |
 | :--- | :--- | :--- |
-| **Terminal** | `Cmd + N` | Switch focus to NativeTab (Configurable) |
-| **NativeTab (search focused)** | `Cmd + N` | Switch back to Terminal (if enabled) |
-| **NativeTab** | `Up / Down` | Navigate connection list |
-| **NativeTab** | `Enter` | Connect to selected server |
+| **Terminal** | `Cmd + N` | Switch focus to FineTerm (Configurable) |
+| **FineTerm (search focused)** | `Cmd + N` | Switch back to Terminal (if enabled) |
+| **FineTerm** | `Up / Down` | Navigate connection list |
+| **FineTerm** | `Enter` | Connect to selected server |
 
 ### Settings
 Click the ⚙️ icon to configure:
@@ -111,8 +111,8 @@ Click the ⚙️ icon to configure:
 
 **Global Activation Shortcut:**
 *   **Modifier + Key:** Choose Command, Control, or Option plus any key.
-*   **System-wide (Global):** Enable to activate NativeTab from any application, not just Terminal.
-*   **Second Activation to Terminal:** When enabled, pressing the shortcut again while NativeTab is focused switches back to Terminal.
+*   **System-wide (Global):** Enable to activate FineTerm from any application, not just Terminal.
+*   **Second Activation to Terminal:** When enabled, pressing the shortcut again while FineTerm is focused switches back to Terminal.
 
 **Command Execution Wrappers:**
 *   **Prefix:** Commands prepended before your connection (e.g., `unset HISTFILE ; clear ;`).

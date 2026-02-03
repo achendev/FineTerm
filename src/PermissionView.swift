@@ -29,7 +29,7 @@ struct PermissionView: View {
             VStack(spacing: 8) {
                 Text("Permissions Required")
                     .font(.headline)
-                Text("NativeTab needs Accessibility permissions to intercept keyboard shortcuts and control Terminal.")
+                Text("FineTerm needs Accessibility permissions to intercept keyboard shortcuts and control Terminal.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

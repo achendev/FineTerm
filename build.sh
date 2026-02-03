@@ -1,21 +1,21 @@
 #!/bin/bash
 set -e
 
-APP_NAME="NativeTab"
+APP_NAME="FineTerm"
 APP_BUNDLE="$APP_NAME.app"
 ICON_PNG_MASTER="icon_1024.png"
-BUNDLE_ID="com.local.NativeTab"
+BUNDLE_ID="com.local.FineTerm"
 
 # --- 1. Clean previous builds (Safe cleanup) ---
 echo "▶ Cleaning up..."
-mkdir -p /tmp/nativetab_trash
-[ -d "$APP_BUNDLE" ] && mv "$APP_BUNDLE" "/tmp/nativetab_trash/${APP_NAME}_$(date +%s).app"
-[ -d "$APP_NAME.iconset" ] && mv "$APP_NAME.iconset" "/tmp/nativetab_trash/iconset_$(date +%s)"
-[ -d "bin" ] && mv "bin" "/tmp/nativetab_trash/bin_$(date +%s)"
+mkdir -p /tmp/FineTerm_trash
+[ -d "$APP_BUNDLE" ] && mv "$APP_BUNDLE" "/tmp/FineTerm_trash/${APP_NAME}_$(date +%s).app"
+[ -d "$APP_NAME.iconset" ] && mv "$APP_NAME.iconset" "/tmp/FineTerm_trash/iconset_$(date +%s)"
+[ -d "bin" ] && mv "bin" "/tmp/FineTerm_trash/bin_$(date +%s)"
 rm -f "$ICON_PNG_MASTER" "$APP_NAME.icns"
 
 # --- 2. Generate Professional Icon ---
-echo "▶ Generating Pro Icon from NativeTab.png..."
+echo "▶ Generating Pro Icon from FineTerm.png..."
 
 # Run the Swift icon generator (uses icon_gen.swift in project root)
 swift icon_gen.swift
@@ -39,7 +39,7 @@ else
     iconutil -c icns "$APP_NAME.iconset" -o "$APP_NAME.icns"
     
     # Cleanup generated artifacts (keep icon_gen.swift as it's a project file)
-    mv "$APP_NAME.iconset" "/tmp/nativetab_trash/iconset_done_$(date +%s)"
+    mv "$APP_NAME.iconset" "/tmp/FineTerm_trash/iconset_done_$(date +%s)"
     rm "$ICON_PNG_MASTER"
 fi
 

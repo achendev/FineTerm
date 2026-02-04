@@ -14,6 +14,10 @@ struct ConnectionListView: View {
     @State var newUsePrefix = true
     @State var newUseSuffix = true
     
+    // Group Creation Inputs (Lifted from Header to allow Keyboard control)
+    @State var isCreatingGroup = false
+    @State var newGroupName = ""
+    
     // UI State
     @State var showSettings = false
     @State var groupToDelete: GroupAlertItem? = nil
@@ -48,6 +52,8 @@ struct ConnectionListView: View {
                 documentToExport: $documentToExport,
                 onImportFromClipboard: importFromClipboard,
                 onExportToClipboard: exportToClipboard,
+                isCreatingGroup: $isCreatingGroup,
+                newGroupName: $newGroupName,
                 isSearchFocused: $isSearchFocused
             )
             .onTapGesture { if selectedConnectionID != nil { resetForm() } }
@@ -192,3 +198,4 @@ struct ConnectionListView: View {
         )
     }
 }
+

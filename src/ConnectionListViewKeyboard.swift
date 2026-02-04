@@ -73,6 +73,30 @@ extension ConnectionListView {
             // 2. Navigation Handling (Only if not in Settings)
             guard !showSettings else { return event }
 
+            // Esc Handler
+            if event.keyCode == 53 {
+                if UserDefaults.standard.bool(forKey: "escToTerminal") {
+                    // Switch to Terminal
+                    DispatchQueue.main.async {
+                        if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Terminal" }) {
+                            terminalApp.activate(options: [.activateIgnoringOtherApps])
+                        } else {
+                            if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
+                                NSWorkspace.shared.openApplication(at: terminalURL, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
+                            }
+                        }
+                    }
+                } else {
+                    // "Cancel All" and Focus Search
+                    self.resetForm()
+                    self.isCreatingGroup = false
+                    self.newGroupName = ""
+                    self.searchText = ""
+                    self.isSearchFocused = true
+                }
+                return nil
+            }
+
             let currentList = visibleConnectionsForNav
             
             switch event.keyCode {
@@ -115,3 +139,4 @@ extension ConnectionListView {
         }
     }
 }
+

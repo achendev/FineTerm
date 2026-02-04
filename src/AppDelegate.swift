@@ -24,7 +24,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "globalShortcutKey": "n",
             "globalShortcutModifier": "command",
             "globalShortcutAnywhere": false,
-            "secondActivationToTerminal": true
+            "secondActivationToTerminal": true,
+            "escToTerminal": false
         ])
 
         // 1. Setup Main Menu (Crucial for Cmd+C, Cmd+V, Cmd+A in TextFields)
@@ -143,3 +144,4 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.post(name: Notification.Name("FineTermOpenSettings"), object: nil)
     }
 }
+

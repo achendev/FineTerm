@@ -16,11 +16,14 @@ struct ConnectionListHeader: View {
     var onImportFromClipboard: () -> Void
     var onExportToClipboard: (Bool) -> Void
     
-    // Group Creation State
-    @State private var isCreatingGroup = false
-    @State private var newGroupName = ""
+    // Group Creation State (Passed as Bindings)
+    @Binding var isCreatingGroup: Bool
+    @Binding var newGroupName: String
     
     var isSearchFocused: FocusState<Bool>.Binding
+    
+    // Local focus state for the new group input
+    @FocusState private var isGroupNameFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -88,6 +91,7 @@ struct ConnectionListHeader: View {
                 HStack {
                     TextField("Group Name", text: $newGroupName)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .focused($isGroupNameFocused)
                         .onSubmit { submitNewGroup() }
                     
                     Button(action: submitNewGroup) { Image(systemName: "checkmark") }
@@ -99,6 +103,12 @@ struct ConnectionListHeader: View {
                 .padding(.horizontal)
                 .padding(.top, 6)
                 .padding(.bottom, 8)
+                .onAppear {
+                    // Auto-focus when this view appears
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        isGroupNameFocused = true
+                    }
+                }
             } else {
                 HStack {
                     Button(action: { isCreatingGroup = true }) {

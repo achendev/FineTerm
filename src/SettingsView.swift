@@ -19,6 +19,7 @@ struct SettingsView: View {
     @AppStorage("globalShortcutModifier") private var globalShortcutModifier = "command"
     @AppStorage("globalShortcutAnywhere") private var globalShortcutAnywhere = false
     @AppStorage("secondActivationToTerminal") private var secondActivationToTerminal = true
+    @AppStorage("escToTerminal") private var escToTerminal = true
     
     @Environment(\.presentationMode) var presentationMode
 
@@ -62,6 +63,10 @@ struct SettingsView: View {
                 Toggle("Second Activation to Terminal", isOn: $secondActivationToTerminal)
                     .toggleStyle(.switch)
                     .help("If enabled, pressing the shortcut again when search is focused will switch to Terminal.")
+                    
+                Toggle("Esc to Terminal", isOn: $escToTerminal)
+                    .toggleStyle(.switch)
+                    .help("If enabled, pressing Esc will switch focus back to Terminal.")
             }
             
             Divider()
@@ -130,3 +135,4 @@ struct SettingsView: View {
         .frame(width: 400, height: 650)
     }
 }
+

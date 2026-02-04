@@ -2,67 +2,39 @@ import Cocoa
 import SwiftUI
 import UniformTypeIdentifiers
 
+// Main View Structure
+// Note: State properties are internal (not private) to allow extensions to access them.
 struct ConnectionListView: View {
     @StateObject var store = ConnectionStore()
     
     // Form Inputs
-    @State private var newName = ""
-    @State private var newCommand = ""
-    @State private var newGroupID: UUID? = nil
-    @State private var newUsePrefix = true
-    @State private var newUseSuffix = true
+    @State var newName = ""
+    @State var newCommand = ""
+    @State var newGroupID: UUID? = nil
+    @State var newUsePrefix = true
+    @State var newUseSuffix = true
     
     // UI State
-    @State private var showSettings = false
-    @State private var groupToDelete: GroupAlertItem? = nil
+    @State var showSettings = false
+    @State var groupToDelete: GroupAlertItem? = nil
     
     // Search & Focus
-    @State private var searchText = ""
-    @FocusState private var isSearchFocused: Bool
+    @State var searchText = ""
+    @FocusState var isSearchFocused: Bool
     
     // Import/Export State
-    @State private var isImporting = false
-    @State private var isExporting = false
-    @State private var documentToExport: ConnectionsDocument?
+    @State var isImporting = false
+    @State var isExporting = false
+    @State var documentToExport: ConnectionsDocument?
     
     // Interaction State
-    @State private var highlightedConnectionID: UUID? = nil
-    @State private var selectedConnectionID: UUID? = nil
-    @State private var lastClickTime: Date = Date.distantPast
-    @State private var lastClickedID: UUID? = nil
+    @State var highlightedConnectionID: UUID? = nil
+    @State var selectedConnectionID: UUID? = nil
+    @State var lastClickTime: Date = Date.distantPast
+    @State var lastClickedID: UUID? = nil
     
-    @AppStorage("hideCommandInList") private var hideCommandInList = true
-    @AppStorage("smartFilter") private var smartFilter = true
-    
-    // MARK: - Navigation Helpers
-    
-    // Helper to get connections sorted by Last Used (Descending)
-    func getSortedConnections(groupID: UUID?) -> [Connection] {
-        let list = store.connections.filter { $0.groupID == groupID }
-        return list.sorted {
-            let d1 = $0.lastUsed ?? Date.distantPast
-            let d2 = $1.lastUsed ?? Date.distantPast
-            if d1 != d2 {
-                return d1 > d2 // Most recently used first
-            }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-        }
-    }
-    
-    var visibleConnectionsForNav: [Connection] {
-        if !searchText.isEmpty {
-            return performFilter(searchText)
-        }
-        var list: [Connection] = []
-        for group in store.groups {
-            if group.isExpanded {
-                // Use sorted list for navigation consistency
-                list.append(contentsOf: getSortedConnections(groupID: group.id))
-            }
-        }
-        list.append(contentsOf: getSortedConnections(groupID: nil))
-        return list
-    }
+    @AppStorage("hideCommandInList") var hideCommandInList = true
+    @AppStorage("smartFilter") var smartFilter = true
     
     // MARK: - Body
     var body: some View {
@@ -132,9 +104,7 @@ struct ConnectionListView: View {
     var mainScrollableList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                // OPTIMIZATION: Use LazyVStack instead of VStack.
-                // This ensures that when searching through hundreds of items, 
-                // only the visible rows are rendered, drastically reducing lag during typing.
+                // OPTIMIZATION: Use LazyVStack for performance with large lists
                 LazyVStack(spacing: 0, pinnedViews: []) { 
                     if !searchText.isEmpty {
                         searchResultList
@@ -167,7 +137,7 @@ struct ConnectionListView: View {
         ForEach(store.groups) { group in
             GroupSectionView(
                 group: group,
-                connections: getSortedConnections(groupID: group.id), // USE SORTED
+                connections: getSortedConnections(groupID: group.id), 
                 highlightedID: highlightedConnectionID,
                 selectedID: selectedConnectionID,
                 hideCommand: hideCommandInList,
@@ -189,7 +159,7 @@ struct ConnectionListView: View {
     
     var ungroupDropArea: some View {
         VStack(spacing: 0) {
-            let ungrouped = getSortedConnections(groupID: nil) // USE SORTED
+            let ungrouped = getSortedConnections(groupID: nil) 
             ForEach(ungrouped) { conn in renderRow(conn) }
             
             Spacer(minLength: 50)
@@ -217,273 +187,5 @@ struct ConnectionListView: View {
             onTap: { handleRowTap(conn) },
             onConnect: { launchConnection(conn) }
         )
-    }
-    
-    // MARK: - Filter Logic
-    func performFilter(_ text: String) -> [Connection] {
-        if smartFilter {
-            let terms = text.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-            if terms.isEmpty { return [] }
-            
-            return store.connections.filter { conn in
-                terms.allSatisfy { term in
-                    conn.name.localizedCaseInsensitiveContains(term) ||
-                    conn.command.localizedCaseInsensitiveContains(term)
-                }
-            }
-            .sorted { ($0.lastUsed ?? Date.distantPast) > ($1.lastUsed ?? Date.distantPast) }
-        } else {
-            return store.connections.filter {
-                $0.name.localizedCaseInsensitiveContains(text) ||
-                $0.command.localizedCaseInsensitiveContains(text)
-            }
-            .sorted { ($0.lastUsed ?? Date.distantPast) > ($1.lastUsed ?? Date.distantPast) }
-        }
-    }
-
-    // MARK: - Actions
-    func handleRowTap(_ conn: Connection) {
-        let now = Date()
-        if lastClickedID == conn.id && now.timeIntervalSince(lastClickTime) < 0.3 {
-            launchConnection(conn)
-        } else {
-            selectedConnectionID = conn.id
-            newName = conn.name
-            newCommand = conn.command
-            newGroupID = conn.groupID
-            newUsePrefix = conn.usePrefix
-            newUseSuffix = conn.useSuffix
-            highlightedConnectionID = conn.id
-        }
-        lastClickTime = now
-        lastClickedID = conn.id
-    }
-    
-    func launchConnection(_ conn: Connection) {
-        store.touch(id: conn.id) // UPDATE LAST USED
-        
-        // Build terminal name prefix if enabled
-        let changeTerminalName = UserDefaults.standard.bool(forKey: "changeTerminalName")
-        
-        // NEW LOGIC: Run in background with sleep to allow SSH/Command to start before setting title
-        // Using printf \e]1;... requires escapes for Swift string
-        let terminalNamePrefix = changeTerminalName ? "{ sleep 2 ; printf '\\e]1;%s\\a' '\(conn.name)' ; } & " : ""
-        
-        // Get prefix/suffix from settings
-        var prefix = conn.usePrefix ? (UserDefaults.standard.string(forKey: "commandPrefix") ?? "") : ""
-        var suffix = conn.useSuffix ? (UserDefaults.standard.string(forKey: "commandSuffix") ?? "") : ""
-        
-        // Replace template variables in prefix and suffix
-        prefix = prefix
-            .replacingOccurrences(of: "$PROFILE_NAME", with: conn.name)
-            .replacingOccurrences(of: "$PROFILE_COMMAND", with: conn.command)
-        suffix = suffix
-            .replacingOccurrences(of: "$PROFILE_NAME", with: conn.name)
-            .replacingOccurrences(of: "$PROFILE_COMMAND", with: conn.command)
-        
-        let finalCommand = terminalNamePrefix + prefix + conn.command + suffix
-        TerminalBridge.launch(command: finalCommand)
-        searchText = ""
-        highlightedConnectionID = nil
-    }
-    
-    func saveSelected() {
-        if let id = selectedConnectionID {
-            // Validation: Do not save if fields are empty
-            if newName.isEmpty || newCommand.isEmpty { return }
-            
-            store.update(id: id, name: newName, command: newCommand, groupID: newGroupID, usePrefix: newUsePrefix, useSuffix: newUseSuffix)
-            resetForm()
-        }
-    }
-    
-    func deleteSelected() {
-        if let id = selectedConnectionID {
-            store.delete(id: id)
-            resetForm()
-        }
-    }
-    
-    func addNew() {
-        if !newName.isEmpty && !newCommand.isEmpty {
-            store.add(name: newName, command: newCommand, groupID: newGroupID, usePrefix: newUsePrefix, useSuffix: newUseSuffix)
-            resetForm()
-        }
-    }
-    
-    func resetForm() {
-        newName = ""
-        newCommand = ""
-        newGroupID = nil
-        newUsePrefix = true
-        newUseSuffix = true
-        selectedConnectionID = nil
-        lastClickedID = nil
-    }
-    
-    func handleImport(_ result: Result<URL, Error>) {
-        if case .success(let url) = result {
-            guard url.startAccessingSecurityScopedResource() else { return }
-            defer { url.stopAccessingSecurityScopedResource() }
-            if let data = try? Data(contentsOf: url),
-               let exportData = try? JSONDecoder().decode(ExportData.self, from: data) {
-                store.restore(from: exportData)
-            }
-        }
-    }
-    
-    func importFromClipboard() {
-        guard let string = NSPasteboard.general.string(forType: .string),
-              let data = string.data(using: .utf8) else {
-            NSSound.beep()
-            return
-        }
-        
-        do {
-            let exportData = try JSONDecoder().decode(ExportData.self, from: data)
-            store.restore(from: exportData)
-        } catch {
-            print("Import Error: \(error)")
-            NSSound.beep()
-        }
-    }
-    
-    func exportToClipboard() {
-        let exportData = store.getSnapshot()
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .prettyPrinted
-        
-        do {
-            let data = try encoder.encode(exportData)
-            if let string = String(data: data, encoding: .utf8) {
-                let pb = NSPasteboard.general
-                pb.clearContents()
-                pb.setString(string, forType: .string)
-            }
-        } catch {
-            print("Export Error: \(error)")
-            NSSound.beep()
-        }
-    }
-
-    func setupOnAppear() {
-        highlightedConnectionID = nil
-        
-        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self.isSearchFocused = true
-            }
-        }
-        
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // 1. GLOBAL SHORTCUT HANDLING WITHIN APP (Priority High)
-            // Checked *before* "showSettings" guard to ensure we can exit settings/edit modes instantly
-            
-            let defaults = UserDefaults.standard
-            let targetKeyChar = defaults.string(forKey: "globalShortcutKey") ?? "n"
-            let targetModifierStr = defaults.string(forKey: "globalShortcutModifier") ?? "command"
-            
-            if let targetCode = KeyboardInterceptor.getKeyCode(for: targetKeyChar),
-               event.keyCode == targetCode {
-                
-                let flags = event.modifierFlags
-                var modifierMatch = false
-                
-                switch targetModifierStr {
-                    case "command": 
-                        modifierMatch = flags.contains(.command) && !flags.contains(.control) && !flags.contains(.option)
-                    case "control": 
-                        modifierMatch = flags.contains(.control) && !flags.contains(.command) && !flags.contains(.option)
-                    case "option":  
-                        modifierMatch = flags.contains(.option) && !flags.contains(.command) && !flags.contains(.control)
-                    default: 
-                        modifierMatch = false
-                }
-                
-                if modifierMatch {
-                    // Check if second activation should switch to Terminal
-                    let secondActivationToTerminal = UserDefaults.standard.bool(forKey: "secondActivationToTerminal")
-                    
-                    // If search is already focused, settings closed, no editing - switch to Terminal
-                    if secondActivationToTerminal && self.isSearchFocused && !self.showSettings && self.selectedConnectionID == nil {
-                        DispatchQueue.main.async {
-                            // Activate Terminal.app
-                            if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Terminal" }) {
-                                terminalApp.activate(options: [.activateIgnoringOtherApps])
-                            } else {
-                                // Terminal not running - launch it
-                                if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
-                                    NSWorkspace.shared.openApplication(at: terminalURL, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
-                                }
-                            }
-                        }
-                        return nil // Swallow event
-                    }
-                    
-                    // ACTION: Reset state and focus search
-                    NSApp.keyWindow?.makeFirstResponder(nil)
-                    
-                    DispatchQueue.main.async {
-                        self.showSettings = false        // Close settings if open
-                        self.selectedConnectionID = nil  // Deselect current row (exit edit mode)
-                        self.resetForm()                 // Clear form
-                        
-                        // Toggle focus state to force update
-                        self.isSearchFocused = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            self.isSearchFocused = true
-                        }
-                    }
-                    return nil // Swallow event
-                }
-            }
-            
-            // 2. Navigation Handling (Only if not in Settings)
-            guard !showSettings else { return event }
-
-            let currentList = visibleConnectionsForNav
-            
-            switch event.keyCode {
-            case 125: // Arrow Down
-                if let current = highlightedConnectionID,
-                   let idx = currentList.firstIndex(where: { $0.id == current }) {
-                    let nextIdx = min(idx + 1, currentList.count - 1)
-                    highlightedConnectionID = currentList[nextIdx].id
-                    return nil
-                } else if !currentList.isEmpty {
-                    highlightedConnectionID = currentList[0].id
-                    return nil
-                }
-            case 126: // Arrow Up
-                if let current = highlightedConnectionID,
-                   let idx = currentList.firstIndex(where: { $0.id == current }) {
-                    let prevIdx = max(idx - 1, 0)
-                    highlightedConnectionID = currentList[prevIdx].id
-                    return nil
-                } else if !currentList.isEmpty {
-                    highlightedConnectionID = currentList[0].id
-                    return nil
-                }
-            case 36: // Enter
-                if let current = highlightedConnectionID,
-                   let conn = currentList.first(where: { $0.id == current }) {
-                    
-                    // If we are currently editing something, save it first
-                    if self.selectedConnectionID != nil {
-                        self.saveSelected()
-                    }
-                    
-                    // Delay launch to ensure Enter key is fully released
-                    // before Terminal becomes active. This prevents the first Enter 
-                    // in Terminal from being ignored.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        self.launchConnection(conn)
-                    }
-                    return nil
-                }
-            default: break
-            }
-            return event
-        }
     }
 }

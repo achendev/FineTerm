@@ -116,7 +116,7 @@ class ConnectionStore: ObservableObject {
             }
         }
         
-        // 3. Merge Connections
+        // 3. Merge Connections (Overwrite by Name)
         for c in data.connections {
             // Resolve Group ID
             var gID: UUID? = nil
@@ -124,14 +124,14 @@ class ConnectionStore: ObservableObject {
                 gID = groupNameMap[gName]
             }
             
-            // Check for duplicates
-            let exists = self.connections.contains { existing in
-                return existing.name == c.name &&
-                       existing.command == c.command &&
-                       existing.groupID == gID
-            }
-            
-            if !exists {
+            if let index = self.connections.firstIndex(where: { $0.name == c.name }) {
+                // Overwrite existing connection with matching name
+                self.connections[index].command = c.command
+                self.connections[index].groupID = gID
+                self.connections[index].usePrefix = c.usePrefix ?? true
+                self.connections[index].useSuffix = c.useSuffix ?? true
+            } else {
+                // Append new connection
                 self.connections.append(Connection(
                     groupID: gID,
                     name: c.name,

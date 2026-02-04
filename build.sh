@@ -1,6 +1,17 @@
 #!/bin/bash
 set -e
 
+# Parse arguments
+INSTALL_MODE=false
+
+for arg in "$@"; do
+    case $arg in
+        -i|--install)
+        INSTALL_MODE=true
+        ;;
+    esac
+done
+
 APP_NAME="FineTerm"
 APP_BUNDLE="$APP_NAME.app"
 ICON_PNG_MASTER="icon_1024.png"
@@ -110,4 +121,25 @@ fi
 
 echo "--------------------------------------------------------"
 echo "✅  Build Complete: $APP_BUNDLE"
+
+if [ "$INSTALL_MODE" = true ]; then
+    echo "--------------------------------------------------------"
+    echo "▶ Installing to /Applications..."
+    
+    # 1. Kill running app if exists
+    pkill -x "$APP_NAME" || true
+    
+    # 2. Replace App Bundle
+    TARGET_DIR="/Applications/$APP_BUNDLE"
+    if [ -d "$TARGET_DIR" ]; then
+        rm -rf "$TARGET_DIR"
+    fi
+    cp -R "$APP_BUNDLE" "/Applications/"
+    
+    # 3. Relaunch
+    echo "▶ Launching $APP_NAME..."
+    open "$TARGET_DIR"
+    echo "✅  Re-installed and Launched."
+fi
 echo "--------------------------------------------------------"
+

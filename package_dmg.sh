@@ -1,6 +1,17 @@
 #!/bin/bash
 set -e
 
+BUILD_ARGS=""
+
+# Parse arguments to pass to build.sh
+for arg in "$@"; do
+    case $arg in
+        -i|--install)
+        BUILD_ARGS="$BUILD_ARGS -i"
+        ;;
+    esac
+done
+
 APP_NAME="FineTerm"
 APP_BUNDLE="$APP_NAME.app"
 DMG_NAME="${APP_NAME}.dmg"
@@ -11,8 +22,8 @@ echo "▶ Cleaning previous builds..."
 rm -rf "$APP_BUNDLE"
 rm -f "$DMG_NAME"
 
-echo "▶ Running build script..."
-./build.sh
+echo "▶ Running build script (Args: $BUILD_ARGS)..."
+./build.sh $BUILD_ARGS
 
 echo "▶ Packaging $APP_BUNDLE into $DMG_NAME..."
 
@@ -35,3 +46,4 @@ mv dist "/tmp/FineTerm_trash/dist_$(date +%s)"
 mv "temp.dmg" "$DMG_NAME"
 
 echo "✅  DMG Created: $DMG_NAME"
+

@@ -7,7 +7,9 @@ var lastMouseDownPoint: CGPoint = .zero
 
 func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
     
-    // Check if Terminal is active
+    // Check if Terminal is active (frontmost)
+    // Exception: If global mode is enabled in future, this might need adjustment, 
+    // but for now the requirement is "Terminal focused".
     guard let frontApp = NSWorkspace.shared.frontmostApplication,
           frontApp.bundleIdentifier == "com.apple.Terminal" else {
         return Unmanaged.passUnretained(event)
@@ -15,31 +17,20 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
     
     let isDebug = UserDefaults.standard.bool(forKey: "debugMode")
     
-    // Helper: Check if click is on the Dock or outside Terminal windows
+    // Robust Hit-Testing:
+    // We determine if the click is actually ON the Terminal window, 
+    // or if it's intercepted by something on top (like the Dock, Spotlight, or Notification Center).
     func isClickInTerminalWindow(_ point: CGPoint) -> Bool {
-        // Get the screen height to convert coordinates
-        guard let screen = NSScreen.main else { return false }
-        let screenHeight = screen.frame.height
+        // OptionOnScreenOnly: Lists all visible windows from front to back (Z-order).
+        // We do NOT use .excludeDesktopElements because we WANT to see the Dock if it's there.
+        let options: CGWindowListOption = [.optionOnScreenOnly]
         
-        // Convert CG coordinates (origin at bottom-left) to NS coordinates
-        let nsPoint = NSPoint(x: point.x, y: screenHeight - point.y)
-        
-        // Check if point is in Dock area (bottom 80 pixels typically)
-        let dockHeight: CGFloat = 80
-        if nsPoint.y > screenHeight - dockHeight {
-            return false // Click is in Dock area
-        }
-        
-        // Additional check: verify we're clicking within a Terminal window
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
             return false
         }
         
         for windowInfo in windowList {
-            guard let ownerName = windowInfo[kCGWindowOwnerName as String] as? String,
-                  ownerName == "Terminal",
-                  let boundsDict = windowInfo[kCGWindowBounds as String] as? [String: CGFloat],
+            guard let boundsDict = windowInfo[kCGWindowBounds as String] as? [String: CGFloat],
                   let x = boundsDict["X"],
                   let y = boundsDict["Y"],
                   let width = boundsDict["Width"],
@@ -48,10 +39,26 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
             }
             
             let windowRect = CGRect(x: x, y: y, width: width, height: height)
+            
             if windowRect.contains(point) {
-                return true
+                // We found the topmost visible window at this coordinate.
+                
+                // Check who owns it.
+                if let ownerName = windowInfo[kCGWindowOwnerName as String] as? String {
+                    if ownerName == "Terminal" {
+                        // The top window is Terminal -> It's a valid click.
+                        return true
+                    } else {
+                        // The top window is something else (Dock, Finder, etc.) -> Ignore.
+                        if isDebug { print("DEBUG: Click blocked by: \(ownerName)") }
+                        return false
+                    }
+                }
+                // If owner unknown, assume it's an obstruction.
+                return false
             }
         }
+        
         return false
     }
 
@@ -59,9 +66,9 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
     if type == .rightMouseDown {
         // Check Setting
         if UserDefaults.standard.bool(forKey: "pasteOnRightClick") {
-            // Only paste if click is actually in a Terminal window (not Dock, menu bar, etc.)
+            // Only paste if click is strictly on a Terminal window (not obscured by Dock)
             if !isClickInTerminalWindow(event.location) {
-                if isDebug { print("DEBUG: Right click outside Terminal window, ignoring.") }
+                if isDebug { print("DEBUG: Right click outside/obscured, ignoring.") }
                 return Unmanaged.passUnretained(event)
             }
             
@@ -102,7 +109,7 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
              return Unmanaged.passUnretained(event)
         }
         
-        // Only copy if click is in Terminal window
+        // Only copy if release is in Terminal window
         if !isClickInTerminalWindow(event.location) {
             return Unmanaged.passUnretained(event)
         }

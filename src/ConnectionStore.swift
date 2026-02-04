@@ -62,6 +62,16 @@ class ConnectionStore: ObservableObject {
         }
     }
     
+    func expandAllGroups() {
+        for i in 0..<groups.count { groups[i].isExpanded = true }
+        save()
+    }
+    
+    func collapseAllGroups() {
+        for i in 0..<groups.count { groups[i].isExpanded = false }
+        save()
+    }
+    
     func deleteGroup(id: UUID) {
         for i in 0..<connections.count {
             if connections[i].groupID == id {
@@ -80,14 +90,31 @@ class ConnectionStore: ObservableObject {
     
     // --- Import / Export Helpers ---
     
-    func getSnapshot() -> ExportData {
-        let expGroups = groups.map { ExportGroup(name: $0.name) }
+    func getSnapshot(onlyExpanded: Bool = false) -> ExportData {
+        // Filter groups if necessary
+        let groupsToExport = onlyExpanded ? groups.filter { $0.isExpanded } : groups
+        let expGroups = groupsToExport.map { ExportGroup(name: $0.name) }
         
-        let expConnections = connections.map { conn -> ExportConnection in
+        let expConnections = connections.compactMap { conn -> ExportConnection? in
             var groupName: String? = nil
-            if let gID = conn.groupID, let g = groups.first(where: { $0.id == gID }) {
-                groupName = g.name
+            
+            if let gID = conn.groupID {
+                // It belongs to a group
+                if let group = groups.first(where: { $0.id == gID }) {
+                    // Check if we should skip this connection because its group is collapsed
+                    if onlyExpanded && !group.isExpanded {
+                        return nil
+                    }
+                    groupName = group.name
+                } else {
+                    // Group ID not found (orphan), treat as ungrouped
+                    if onlyExpanded { return nil }
+                }
+            } else {
+                // Ungrouped connection
+                if onlyExpanded { return nil }
             }
+            
             return ExportConnection(
                 name: conn.name,
                 command: conn.command,

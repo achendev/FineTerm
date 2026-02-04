@@ -14,7 +14,7 @@ struct ConnectionListHeader: View {
     
     // Action Callbacks
     var onImportFromClipboard: () -> Void
-    var onExportToClipboard: () -> Void
+    var onExportToClipboard: (Bool) -> Void
     
     // Group Creation State
     @State private var isCreatingGroup = false
@@ -31,12 +31,19 @@ struct ConnectionListHeader: View {
                 
                 // Import/Export Menu
                 Menu {
-                    Button("Export to File") {
-                        documentToExport = ConnectionsDocument(exportData: store.getSnapshot())
+                    Button("Export All to File") {
+                        documentToExport = ConnectionsDocument(exportData: store.getSnapshot(onlyExpanded: false))
                         isExporting = true
                     }
-                    Button("Export to Clipboard") {
-                        onExportToClipboard()
+                    Button("Export Expanded to File") {
+                        documentToExport = ConnectionsDocument(exportData: store.getSnapshot(onlyExpanded: true))
+                        isExporting = true
+                    }
+                    Button("Export All to Clipboard") {
+                        onExportToClipboard(false)
+                    }
+                    Button("Export Expanded to Clipboard") {
+                        onExportToClipboard(true)
                     }
                     Divider()
                     Button("Import from File") {
@@ -99,7 +106,23 @@ struct ConnectionListHeader: View {
                             .font(.caption).foregroundColor(.secondary)
                     }
                     .buttonStyle(.borderless)
+                    
                     Spacer()
+                    
+                    // Bulk Expand/Collapse Buttons
+                    HStack(spacing: 12) {
+                        Button(action: { store.expandAllGroups() }) {
+                            Image(systemName: "chevron.down.square")
+                                .help("Expand All Groups")
+                        }
+                        Button(action: { store.collapseAllGroups() }) {
+                            Image(systemName: "chevron.up.square")
+                                .help("Collapse All Groups")
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.body)
+                    .foregroundColor(.secondary)
                 }
                 .padding(.horizontal).padding(.top, 4).padding(.bottom, 8)
             }

@@ -38,14 +38,32 @@ extension ConnectionListView {
             let terms = text.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
             if terms.isEmpty { return [] }
             
+            // Separate inclusion and exclusion terms
+            // Terms starting with "-" (and having more characters) are exclusions.
+            let excludeTerms = terms.filter { $0.hasPrefix("-") && $0.count > 1 }.map { String($0.dropFirst()) }
+            // All other terms (including a standalone "-") are inclusions.
+            let includeTerms = terms.filter { !$0.hasPrefix("-") || $0.count == 1 }
+            
             return store.connections.filter { conn in
-                terms.allSatisfy { term in
+                // 1. Must match ALL inclusion terms
+                let matchesAllIncludes = includeTerms.allSatisfy { term in
                     conn.name.localizedCaseInsensitiveContains(term) ||
                     conn.command.localizedCaseInsensitiveContains(term)
                 }
+                
+                if !matchesAllIncludes { return false }
+                
+                // 2. Must NOT match ANY exclusion terms
+                let matchesAnyExclude = excludeTerms.contains { term in
+                    conn.name.localizedCaseInsensitiveContains(term) ||
+                    conn.command.localizedCaseInsensitiveContains(term)
+                }
+                
+                return !matchesAnyExclude
             }
             .sorted { ($0.lastUsed ?? Date.distantPast) > ($1.lastUsed ?? Date.distantPast) }
         } else {
+            // Standard simple search (legacy/exact match mode)
             return store.connections.filter {
                 $0.name.localizedCaseInsensitiveContains(text) ||
                 $0.command.localizedCaseInsensitiveContains(text)
@@ -159,8 +177,8 @@ extension ConnectionListView {
         }
     }
     
-    func exportToClipboard() {
-        let exportData = store.getSnapshot()
+    func exportToClipboard(onlyExpanded: Bool) {
+        let exportData = store.getSnapshot(onlyExpanded: onlyExpanded)
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         

@@ -22,6 +22,8 @@ struct SettingsView: View {
     @AppStorage(AppConfig.Keys.enableClipboardManager) private var enableClipboardManager = false
     @AppStorage(AppConfig.Keys.clipboardShortcutKey) private var clipboardShortcutKey = "u"
     @AppStorage(AppConfig.Keys.clipboardShortcutModifier) private var clipboardShortcutModifier = "command"
+    @AppStorage(AppConfig.Keys.clipboardMaxLines) private var clipboardMaxLines = 2
+    @AppStorage(AppConfig.Keys.clipboardHistorySize) private var clipboardHistorySize = 100
     
     @State private var runOnStartup: Bool = LaunchAtLoginManager.isEnabled()
     
@@ -95,6 +97,39 @@ struct SettingsView: View {
                                 }
                             }
                             .padding(.leading, 10)
+                            
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Display:")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                HStack {
+                                    Text("Max Lines:")
+                                        .font(.caption)
+                                    TextField("2", value: $clipboardMaxLines, formatter: NumberFormatter())
+                                        .frame(width: 40)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                }
+                            }
+                            .padding(.leading, 10)
+                            
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Storage:")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                HStack {
+                                    Text("Max Items:")
+                                        .font(.caption)
+                                    TextField("100", value: $clipboardHistorySize, formatter: NumberFormatter())
+                                        .frame(width: 50)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                }
+                                
+                                Button("Clear History") {
+                                    NSApp.sendAction(#selector(AppDelegate.clearClipboardHistory), to: nil, from: nil)
+                                }
+                                .controlSize(.small)
+                            }
+                            .padding(.leading, 10)
                         }
                     }
                     
@@ -151,6 +186,7 @@ struct SettingsView: View {
                 .padding()
             }
         }
-        .frame(minWidth: 400, minHeight: 500)
+        .frame(minWidth: 400, minHeight: 600)
     }
 }
+

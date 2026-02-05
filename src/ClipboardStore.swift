@@ -52,8 +52,12 @@ class ClipboardStore: ObservableObject {
         let item = ClipboardItem(content: content, timestamp: Date())
         history.insert(item, at: 0)
         
-        if history.count > 100 {
-            history = Array(history.prefix(100))
+        // Read limit from settings
+        let limit = UserDefaults.standard.integer(forKey: AppConfig.Keys.clipboardHistorySize)
+        let effectiveLimit = limit > 0 ? limit : 100
+        
+        if history.count > effectiveLimit {
+            history = Array(history.prefix(effectiveLimit))
         }
         
         save()
@@ -64,6 +68,11 @@ class ClipboardStore: ObservableObject {
         pb.clearContents()
         pb.setString(item.content, forType: .string)
         // The timer will pick this up as a change and add it to history top as well
+    }
+    
+    func clear() {
+        history.removeAll()
+        save()
     }
     
     private func save() {
@@ -79,3 +88,4 @@ class ClipboardStore: ObservableObject {
         }
     }
 }
+

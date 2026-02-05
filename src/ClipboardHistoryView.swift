@@ -29,13 +29,15 @@ struct ClipboardRow: View {
     let item: ClipboardItem
     let action: () -> Void
     
+    @AppStorage(AppConfig.Keys.clipboardMaxLines) private var maxLines = 2
+    
     @State private var isHovering = false
     
     var body: some View {
         HStack(alignment: .top) {
             Text(item.content)
                 .font(.system(.body, design: .monospaced))
-                .lineLimit(2)
+                .lineLimit(maxLines)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 8)
@@ -53,3 +55,4 @@ struct ClipboardRow: View {
         }
     }
 }
+

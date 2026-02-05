@@ -149,6 +149,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func openSettings() {
         settingsManager.open() // Open standalone window
     }
+    
+    @objc func clearClipboardHistory() {
+        clipboardStore.clear()
+    }
 
     // MARK: - NSWindowDelegate
     
@@ -180,3 +184,4 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return true
     }
 }
+

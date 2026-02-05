@@ -22,6 +22,8 @@ struct AppConfig {
         static let enableClipboardManager = "enableClipboardManager"
         static let clipboardShortcutKey = "clipboardShortcutKey"
         static let clipboardShortcutModifier = "clipboardShortcutModifier"
+        static let clipboardMaxLines = "clipboardMaxLines"
+        static let clipboardHistorySize = "clipboardHistorySize"
     }
     
     static let defaults: [String: Any] = [
@@ -44,10 +46,13 @@ struct AppConfig {
         
         Keys.enableClipboardManager: false,
         Keys.clipboardShortcutKey: "u",
-        Keys.clipboardShortcutModifier: "command"
+        Keys.clipboardShortcutModifier: "command",
+        Keys.clipboardMaxLines: 2,
+        Keys.clipboardHistorySize: 100
     ]
     
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: defaults)
     }
 }
+

@@ -17,6 +17,7 @@ struct SettingsView: View {
     @AppStorage(AppConfig.Keys.globalShortcutModifier) private var globalShortcutModifier = "command"
     @AppStorage(AppConfig.Keys.globalShortcutAnywhere) private var globalShortcutAnywhere = false
     @AppStorage(AppConfig.Keys.secondActivationToTerminal) private var secondActivationToTerminal = true
+    @AppStorage(AppConfig.Keys.thirdActivationToOrigin) private var thirdActivationToOrigin = true
     @AppStorage(AppConfig.Keys.escToTerminal) private var escToTerminal = false
     
     @AppStorage(AppConfig.Keys.enableClipboardManager) private var enableClipboardManager = false
@@ -62,6 +63,12 @@ struct SettingsView: View {
                         
                         Toggle("System-wide (Global)", isOn: $globalShortcutAnywhere)
                         Toggle("Second Activation to Terminal", isOn: $secondActivationToTerminal)
+                        
+                        if secondActivationToTerminal {
+                            Toggle("Third Activation Back to Origin", isOn: $thirdActivationToOrigin)
+                                .padding(.leading, 20)
+                        }
+                        
                         Toggle("Esc to Terminal", isOn: $escToTerminal)
                     }
                     
@@ -189,4 +196,3 @@ struct SettingsView: View {
         .frame(minWidth: 400, minHeight: 600)
     }
 }
-

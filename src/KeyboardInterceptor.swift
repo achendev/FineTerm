@@ -3,6 +3,9 @@ import ApplicationServices
 
 private var globalKeyboardEventTap: CFMachPort?
 
+// State for the Origin Loop (Origin -> FineTerm -> Terminal -> Origin)
+private var savedOriginBundleID: String?
+
 class KeyboardInterceptor {
     var eventTap: CFMachPort?
     var runLoopSource: CFRunLoopSource?
@@ -91,6 +94,7 @@ class KeyboardInterceptor {
         globalKeyboardEventTap = nil
         eventTap = nil
         runLoopSource = nil
+        savedOriginBundleID = nil
     }
 }
 
@@ -104,6 +108,48 @@ func isModifierMatch(flags: CGEventFlags, targetStr: String) -> Bool {
             return flags.contains(.maskAlternate) && !flags.contains(.maskCommand) && !flags.contains(.maskControl)
         default: 
             return false
+    }
+}
+
+// Helpers for Activation
+func activateApp(bundleID: String) {
+    let workspace = NSWorkspace.shared
+    
+    // Attempt to find the URL for the app
+    guard let url = workspace.urlForApplication(withBundleIdentifier: bundleID) else {
+        print("DEBUG: Could not find URL for bundle ID: \(bundleID)")
+        return
+    }
+    
+    // Robust Activation using OpenConfiguration (Equivalent to Dock click)
+    let config = NSWorkspace.OpenConfiguration()
+    config.activates = true
+    
+    workspace.openApplication(at: url, configuration: config) { app, error in
+        if let error = error {
+            print("DEBUG: Failed to activate \(bundleID): \(error)")
+        } else {
+            print("DEBUG: Successfully requested activation for \(bundleID)")
+        }
+    }
+}
+
+func activateFineTerm() {
+    DispatchQueue.main.async {
+        if let appDelegate = NSApp.delegate as? AppDelegate,
+           let window = appDelegate.window {
+            NSApp.unhide(nil)
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+func activateTerminal() {
+    DispatchQueue.main.async {
+        activateApp(bundleID: "com.apple.Terminal")
     }
 }
 
@@ -122,38 +168,74 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     
     let defaults = UserDefaults.standard
     let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-    let frontApp = NSWorkspace.shared.frontmostApplication
-    let isTerminalFront = frontApp?.bundleIdentifier == "com.apple.Terminal"
+    let debug = defaults.bool(forKey: AppConfig.Keys.debugMode)
     
-    // CHECK 1: Main Shortcut
+    // CHECK 1: Main Shortcut (The Activation Loop)
     let mainKey = defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n"
     let mainMod = defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command"
     let mainAnywhere = defaults.bool(forKey: AppConfig.Keys.globalShortcutAnywhere)
+    let secondActivation = defaults.bool(forKey: AppConfig.Keys.secondActivationToTerminal)
+    let thirdActivation = defaults.bool(forKey: AppConfig.Keys.thirdActivationToOrigin)
     
-    if (mainAnywhere || isTerminalFront),
-       let mainCode = KeyboardInterceptor.getKeyCode(for: mainKey),
+    let frontApp = NSWorkspace.shared.frontmostApplication
+    let isTerminalFront = frontApp?.bundleIdentifier == "com.apple.Terminal"
+    let isFineTermFront = NSApp.isActive // Reliable for own app check
+    
+    if let mainCode = KeyboardInterceptor.getKeyCode(for: mainKey),
        keyCode == Int64(mainCode),
        isModifierMatch(flags: flags, targetStr: mainMod) {
         
-        if NSApp.isActive { return Unmanaged.passUnretained(event) }
-        
-        if let appDelegate = NSApp.delegate as? AppDelegate,
-           let window = appDelegate.window {
-            
-            // 1. Explicitly unhide to prepare WindowServer
-            NSApp.unhide(nil)
-            
-            if window.isMiniaturized { window.deminiaturize(nil) }
-            
-            // 2. Force Window Order
-            window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
+        // Safety: If global anywhere is off, we only care if we are in Terminal, FineTerm, or it's a valid trigger context
+        if !mainAnywhere && !isTerminalFront && !isFineTermFront {
+             return Unmanaged.passUnretained(event)
         }
         
-        // 3. Activate Application (Fixed: Use NSApp.activate for robust focus)
-        NSApp.activate(ignoringOtherApps: true)
+        if debug { print("DEBUG: Shortcut Pressed. Front: \(frontApp?.localizedName ?? "Unknown")") }
         
-        return nil
+        // --- LOOP LOGIC ---
+        
+        // 1. FineTerm -> Terminal
+        if isFineTermFront {
+            if secondActivation {
+                if debug { print("DEBUG: Loop Step 2: FineTerm -> Terminal") }
+                activateTerminal()
+                return nil // Swallow event
+            }
+            return Unmanaged.passUnretained(event)
+        }
+        
+        // 2. Terminal -> Origin (or FineTerm)
+        if isTerminalFront {
+            if secondActivation && thirdActivation,
+               let originID = savedOriginBundleID,
+               originID != "com.apple.Terminal",
+               originID != Bundle.main.bundleIdentifier {
+                
+                if debug { print("DEBUG: Loop Step 3: Terminal -> Origin (\(originID))") }
+                DispatchQueue.main.async {
+                    activateApp(bundleID: originID)
+                }
+                return nil // Swallow event
+            }
+            
+            // Fallback: Terminal -> FineTerm
+            if debug { print("DEBUG: Loop Step 3 (Fallback): Terminal -> FineTerm") }
+            activateFineTerm()
+            return nil
+        }
+        
+        // 3. Origin -> FineTerm
+        if !isFineTermFront && !isTerminalFront {
+            if let app = frontApp, let bundleID = app.bundleIdentifier {
+                savedOriginBundleID = bundleID
+                if debug { print("DEBUG: Loop Step 1: Origin (\(app.localizedName ?? bundleID)) -> FineTerm") }
+            } else {
+                if debug { print("DEBUG: Loop Step 1: Unknown Origin -> FineTerm") }
+            }
+            
+            activateFineTerm()
+            return nil
+        }
     }
     
     // CHECK 2: Clipboard Shortcut

@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import Darwin
 
 @objc
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
@@ -12,26 +13,60 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var settingsManager: SettingsWindowManager!
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        // 1. Setup Configuration
+        // 1. Setup Logging (First priority to capture initialization)
+        setupLogging()
+        
+        // 2. Setup Configuration
         AppConfig.registerDefaults()
         
-        // 2. Setup Menu
+        // 3. Setup Menu
         MenuManager.setupMainMenu()
         
-        // 3. Setup Window & Policy
+        // 4. Setup Window & Policy
         NSApp.setActivationPolicy(.regular)
         setupMainWindow()
         
-        // 4. Setup Services
+        // 5. Setup Services
         clipboardStore = ClipboardStore()
         clipboardManager = ClipboardWindowManager(store: clipboardStore)
         settingsManager = SettingsWindowManager() // Init settings manager
         
-        // 5. Check Permissions & Launch
+        // 6. Check Permissions & Launch
         checkPermissionsAndStart()
         
-        // 6. Setup Local Shortcut Monitor
+        // 7. Setup Local Shortcut Monitor
         setupLocalShortcutMonitor()
+    }
+    
+    func setupLogging() {
+        let fileManager = FileManager.default
+        let home = fileManager.homeDirectoryForCurrentUser
+        let tmpDir = home.appendingPathComponent("tmp")
+        
+        do {
+            // Ensure ~/tmp exists
+            try fileManager.createDirectory(at: tmpDir, withIntermediateDirectories: true, attributes: nil)
+            
+            let logFile = tmpDir.appendingPathComponent("fineterm_debug.log")
+            let path = logFile.path
+            
+            // Redirect stdout and stderr to the log file
+            // "a+" opens for reading and appending (creates if not exists)
+            freopen(path, "a+", stdout)
+            freopen(path, "a+", stderr)
+            
+            // Disable buffering so logs appear immediately in the file
+            setbuf(stdout, nil)
+            setbuf(stderr, nil)
+            
+            print("\n--------------------------------------------------------------------------------")
+            print("FineTerm Log Session Started: \(Date())")
+            print("Log File: \(path)")
+            print("--------------------------------------------------------------------------------")
+            
+        } catch {
+            NSLog("Error setting up logging: \(error)")
+        }
     }
     
     func setupMainWindow() {
@@ -81,10 +116,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         
-        print("FineTerm Started")
+        print("FineTerm Started (UI Loaded)")
     }
     
     func startServices() {
+        print("Starting Services (Mouse, Keyboard, Clipboard)...")
         mouseInterceptor = MouseInterceptor()
         mouseInterceptor?.start()
         
@@ -184,4 +220,3 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return true
     }
 }
-

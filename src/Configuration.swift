@@ -17,6 +17,7 @@ struct AppConfig {
         static let globalShortcutModifier = "globalShortcutModifier"
         static let globalShortcutAnywhere = "globalShortcutAnywhere"
         static let secondActivationToTerminal = "secondActivationToTerminal"
+        static let thirdActivationToOrigin = "thirdActivationToOrigin"
         static let escToTerminal = "escToTerminal"
         
         static let enableClipboardManager = "enableClipboardManager"
@@ -42,6 +43,7 @@ struct AppConfig {
         Keys.globalShortcutModifier: "command",
         Keys.globalShortcutAnywhere: false,
         Keys.secondActivationToTerminal: true,
+        Keys.thirdActivationToOrigin: true,
         Keys.escToTerminal: false,
         
         Keys.enableClipboardManager: false,
@@ -55,4 +57,3 @@ struct AppConfig {
         UserDefaults.standard.register(defaults: defaults)
     }
 }
-

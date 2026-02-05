@@ -3,7 +3,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 // Main View Structure
-// Note: State properties are internal (not private) to allow extensions to access them.
 struct ConnectionListView: View {
     @StateObject var store = ConnectionStore()
     
@@ -14,12 +13,11 @@ struct ConnectionListView: View {
     @State var newUsePrefix = true
     @State var newUseSuffix = true
     
-    // Group Creation Inputs (Lifted from Header to allow Keyboard control)
+    // Group Creation Inputs
     @State var isCreatingGroup = false
     @State var newGroupName = ""
     
     // UI State
-    @State var showSettings = false
     @State var groupToDelete: GroupAlertItem? = nil
     
     // Search & Focus
@@ -37,16 +35,14 @@ struct ConnectionListView: View {
     @State var lastClickTime: Date = Date.distantPast
     @State var lastClickedID: UUID? = nil
     
-    @AppStorage("hideCommandInList") var hideCommandInList = true
-    @AppStorage("smartFilter") var smartFilter = true
+    @AppStorage(AppConfig.Keys.hideCommandInList) var hideCommandInList = true
+    @AppStorage(AppConfig.Keys.smartFilter) var smartFilter = true
     
-    // MARK: - Body
     var body: some View {
         VStack(spacing: 0) {
             ConnectionListHeader(
                 store: store,
                 searchText: $searchText,
-                showSettings: $showSettings,
                 isImporting: $isImporting,
                 isExporting: $isExporting,
                 documentToExport: $documentToExport,
@@ -90,7 +86,7 @@ struct ConnectionListView: View {
                 onCancel: resetForm
             )
         }
-        .sheet(isPresented: $showSettings) { SettingsView() }
+        // Removed .sheet(isPresented: $showSettings)
         .alert(item: $groupToDelete) { item in
             Alert(
                 title: Text("Delete Group?"),
@@ -104,16 +100,13 @@ struct ConnectionListView: View {
         }
         .fileExporter(isPresented: $isExporting, document: documentToExport, contentType: .json, defaultFilename: "mt_connections_backup") { _ in }
         .onAppear(perform: setupOnAppear)
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("FineTermOpenSettings"))) { _ in
-            showSettings = true
-        }
+        // Removed NotificationCenter observer for Settings
     }
     
     // MARK: - List Rendering
     var mainScrollableList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                // OPTIMIZATION: Use LazyVStack for performance with large lists
                 LazyVStack(spacing: 0, pinnedViews: []) { 
                     if !searchText.isEmpty {
                         searchResultList
@@ -198,4 +191,3 @@ struct ConnectionListView: View {
         )
     }
 }
-

@@ -3,26 +3,20 @@ import SwiftUI
 struct ConnectionListHeader: View {
     @ObservedObject var store: ConnectionStore
     
-    // Bindings
     @Binding var searchText: String
-    @Binding var showSettings: Bool
+    // Removed showSettings binding
     
-    // Import/Export Bindings
     @Binding var isImporting: Bool
     @Binding var isExporting: Bool
     @Binding var documentToExport: ConnectionsDocument?
     
-    // Action Callbacks
     var onImportFromClipboard: () -> Void
     var onExportToClipboard: (Bool) -> Void
     
-    // Group Creation State (Passed as Bindings)
     @Binding var isCreatingGroup: Bool
     @Binding var newGroupName: String
     
     var isSearchFocused: FocusState<Bool>.Binding
-    
-    // Local focus state for the new group input
     @FocusState private var isGroupNameFocused: Bool
 
     var body: some View {
@@ -64,7 +58,10 @@ struct ConnectionListHeader: View {
                 .help("Import/Export")
                 .padding(.trailing, 8)
 
-                Button(action: { showSettings = true }) {
+                // Settings Button calling AppDelegate directly
+                Button(action: { 
+                    NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil)
+                }) {
                     Image(systemName: "gear").font(.system(size: 16))
                 }
                 .buttonStyle(.borderless)
@@ -104,7 +101,6 @@ struct ConnectionListHeader: View {
                 .padding(.top, 6)
                 .padding(.bottom, 8)
                 .onAppear {
-                    // Auto-focus when this view appears
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         isGroupNameFocused = true
                     }
@@ -119,7 +115,6 @@ struct ConnectionListHeader: View {
                     
                     Spacer()
                     
-                    // Bulk Expand/Collapse Buttons
                     HStack(spacing: 12) {
                         Button(action: { store.expandAllGroups() }) {
                             Image(systemName: "chevron.down.square")

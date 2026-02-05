@@ -9,6 +9,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     var clipboardStore: ClipboardStore!
     var clipboardManager: ClipboardWindowManager!
+    var settingsManager: SettingsWindowManager!
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // 1. Setup Configuration
@@ -24,9 +25,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 4. Setup Services
         clipboardStore = ClipboardStore()
         clipboardManager = ClipboardWindowManager(store: clipboardStore)
+        settingsManager = SettingsWindowManager() // Init settings manager
         
         // 5. Check Permissions & Launch
         checkPermissionsAndStart()
+        
+        // 6. Setup Local Shortcut Monitor
+        setupLocalShortcutMonitor()
     }
     
     func setupMainWindow() {
@@ -86,17 +91,60 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardStore.startMonitoring()
     }
     
+    func setupLocalShortcutMonitor() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            
+            // Check for Global Shortcut
+            let defaults = UserDefaults.standard
+            let targetKeyChar = defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n"
+            let targetModifierStr = defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command"
+            
+            if let targetCode = KeyboardInterceptor.getKeyCode(for: targetKeyChar),
+               event.keyCode == targetCode {
+                
+                let flags = event.modifierFlags
+                var modifierMatch = false
+                
+                switch targetModifierStr {
+                    case "command": 
+                        modifierMatch = flags.contains(.command) && !flags.contains(.control) && !flags.contains(.option)
+                    case "control": 
+                        modifierMatch = flags.contains(.control) && !flags.contains(.command) && !flags.contains(.option)
+                    case "option":  
+                        modifierMatch = flags.contains(.option) && !flags.contains(.command) && !flags.contains(.control)
+                    default: 
+                        modifierMatch = false
+                }
+                
+                if modifierMatch {
+                    // Check if current key window is NOT main window (e.g. Settings or Clipboard)
+                    if let mainWin = self.window, 
+                       let keyWindow = NSApp.keyWindow, 
+                       keyWindow !== mainWin {
+                        
+                        // Close others
+                        self.settingsManager.close()
+                        self.clipboardManager.close()
+                        
+                        // Activate Main
+                        if mainWin.isMiniaturized { mainWin.deminiaturize(nil) }
+                        mainWin.makeKeyAndOrderFront(nil)
+                        return nil // Swallow event
+                    }
+                }
+            }
+            return event
+        }
+    }
+    
     func toggleClipboardWindow() {
         clipboardManager.toggle()
     }
     
-    // Called via Menu Item selector
+    // Called via Menu Item selector or UI Button
     @objc func openSettings() {
-        NotificationCenter.default.post(name: Notification.Name("FineTermOpenSettings"), object: nil)
-        if !window.isVisible {
-            window.makeKeyAndOrderFront(nil)
-        }
-        NSApp.activate(ignoringOtherApps: true)
+        settingsManager.open() // Open standalone window
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {

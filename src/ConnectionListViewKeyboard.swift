@@ -14,10 +14,21 @@ extension ConnectionListView {
         }
         
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            
+            // REQ: Ensure we only process these shortcuts if the MAIN window is the target.
+            // This prevents "Esc to Terminal" from firing when Clipboard Manager or Settings is focused.
+            // We check if the event's window is the NSApp.mainWindow (usually the active document/tool window)
+            // or explicitly check against the window containing this view.
+            guard let eventWindow = event.window, 
+                  let appDelegate = NSApp.delegate as? AppDelegate,
+                  eventWindow === appDelegate.window else {
+                return event
+            }
+            
             // 1. GLOBAL SHORTCUT HANDLING WITHIN APP (Priority High)
             let defaults = UserDefaults.standard
-            let targetKeyChar = defaults.string(forKey: "globalShortcutKey") ?? "n"
-            let targetModifierStr = defaults.string(forKey: "globalShortcutModifier") ?? "command"
+            let targetKeyChar = defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n"
+            let targetModifierStr = defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command"
             
             if let targetCode = KeyboardInterceptor.getKeyCode(for: targetKeyChar),
                event.keyCode == targetCode {
@@ -38,9 +49,9 @@ extension ConnectionListView {
                 
                 if modifierMatch {
                     // Check if second activation should switch to Terminal
-                    let secondActivationToTerminal = UserDefaults.standard.bool(forKey: "secondActivationToTerminal")
+                    let secondActivationToTerminal = defaults.bool(forKey: AppConfig.Keys.secondActivationToTerminal)
                     
-                    if secondActivationToTerminal && self.isSearchFocused && !self.showSettings && self.selectedConnectionID == nil {
+                    if secondActivationToTerminal && self.isSearchFocused && self.selectedConnectionID == nil {
                         DispatchQueue.main.async {
                             if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Terminal" }) {
                                 terminalApp.activate(options: [.activateIgnoringOtherApps])
@@ -57,10 +68,8 @@ extension ConnectionListView {
                     NSApp.keyWindow?.makeFirstResponder(nil)
                     
                     DispatchQueue.main.async {
-                        self.showSettings = false
                         self.selectedConnectionID = nil
                         self.resetForm()
-                        
                         self.isSearchFocused = false
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                             self.isSearchFocused = true
@@ -70,12 +79,10 @@ extension ConnectionListView {
                 }
             }
             
-            // 2. Navigation Handling (Only if not in Settings)
-            guard !showSettings else { return event }
-
+            // 2. Navigation Handling
             // Esc Handler
             if event.keyCode == 53 {
-                if UserDefaults.standard.bool(forKey: "escToTerminal") {
+                if UserDefaults.standard.bool(forKey: AppConfig.Keys.escToTerminal) {
                     // Switch to Terminal
                     DispatchQueue.main.async {
                         if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Terminal" }) {
@@ -139,4 +146,3 @@ extension ConnectionListView {
         }
     }
 }
-

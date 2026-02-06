@@ -159,6 +159,11 @@ struct ClipboardHistoryView: View {
             
             // Keyboard Handling
             keyHandler.start { event in
+                // SECURITY: Ensure we only intercept keys if the event belongs to the ClipboardWindow.
+                // This prevents swallowing keys meant for the Main Window when this view is technically
+                // still "mounted" but the window is hidden/inactive.
+                guard let window = event.window, window is ClipboardWindow else { return false }
+                
                 switch event.keyCode {
                 case 126: // Up Arrow
                     viewModel.moveSelection(-1)

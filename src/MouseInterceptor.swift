@@ -4,12 +4,23 @@ import Foundation
 
 // Global variable to store start point
 var lastMouseDownPoint: CGPoint = .zero
+// Global variable for re-enabling tap
+private var globalMouseEventTap: CFMachPort?
 
 func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
     
+    // 0. Handle Tap Disabled (CRITICAL FIX)
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        if let tap = globalMouseEventTap {
+            CGEvent.tapEnable(tap: tap, enable: true)
+            if UserDefaults.standard.bool(forKey: "debugMode") {
+                print("DEBUG: Mouse Tap re-enabled after timeout/user input.")
+            }
+        }
+        return Unmanaged.passUnretained(event)
+    }
+    
     // Check if Terminal is active (frontmost)
-    // Exception: If global mode is enabled in future, this might need adjustment, 
-    // but for now the requirement is "Terminal focused".
     guard let frontApp = NSWorkspace.shared.frontmostApplication,
           frontApp.bundleIdentifier == "com.apple.Terminal" else {
         return Unmanaged.passUnretained(event)
@@ -18,11 +29,7 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
     let isDebug = UserDefaults.standard.bool(forKey: "debugMode")
     
     // Robust Hit-Testing:
-    // We determine if the click is actually ON the Terminal window, 
-    // or if it's intercepted by something on top (like the Dock, Spotlight, or Notification Center).
     func isClickInTerminalWindow(_ point: CGPoint) -> Bool {
-        // OptionOnScreenOnly: Lists all visible windows from front to back (Z-order).
-        // We do NOT use .excludeDesktopElements because we WANT to see the Dock if it's there.
         let options: CGWindowListOption = [.optionOnScreenOnly]
         
         guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
@@ -41,21 +48,23 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
             let windowRect = CGRect(x: x, y: y, width: width, height: height)
             
             if windowRect.contains(point) {
-                // We found the topmost visible window at this coordinate.
-                
-                // Check who owns it.
-                if let ownerName = windowInfo[kCGWindowOwnerName as String] as? String {
-                    if ownerName == "Terminal" {
-                        // The top window is Terminal -> It's a valid click.
-                        return true
-                    } else {
-                        // The top window is something else (Dock, Finder, etc.) -> Ignore.
-                        if isDebug { print("DEBUG: Click blocked by: \(ownerName)") }
-                        return false
-                    }
+                // We found a visible window at this coordinate.
+                guard let ownerName = windowInfo[kCGWindowOwnerName as String] as? String else {
+                    return false
                 }
-                // If owner unknown, assume it's an obstruction.
-                return false
+                
+                // IGNORE system overlays from Window Server (Cursor, Shadows, etc.)
+                if ownerName == "Window Server" {
+                    continue // Keep looking at windows below this one
+                }
+                
+                if ownerName == "Terminal" {
+                    return true // Found the Terminal window!
+                } else {
+                    // It is obstructed by another app (e.g. Dock, Finder, Chrome)
+                    if isDebug { print("DEBUG: Click blocked by: \(ownerName)") }
+                    return false
+                }
             }
         }
         
@@ -189,6 +198,8 @@ class MouseInterceptor {
         }
 
         self.eventTap = tap
+        globalMouseEventTap = tap
+        
         self.runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         
         if let rls = self.runLoopSource {
@@ -205,5 +216,6 @@ class MouseInterceptor {
                 CFRunLoopRemoveSource(CFRunLoopGetCurrent(), rls, .commonModes)
             }
         }
+        globalMouseEventTap = nil
     }
 }

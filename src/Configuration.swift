@@ -12,7 +12,7 @@ struct AppConfig {
         
         static let hideCommandInList = "hideCommandInList"
         static let smartFilter = "smartFilter"
-        static let glueToTerminal = "glueToTerminal"
+        static let snapToTerminal = "snapToTerminal"
         
         static let globalShortcutKey = "globalShortcutKey"
         static let globalShortcutModifier = "globalShortcutModifier"
@@ -39,7 +39,7 @@ struct AppConfig {
         
         Keys.hideCommandInList: true,
         Keys.smartFilter: true,
-        Keys.glueToTerminal: false,
+        Keys.snapToTerminal: false,
         
         Keys.globalShortcutKey: "n",
         Keys.globalShortcutModifier: "command",

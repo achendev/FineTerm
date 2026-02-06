@@ -12,7 +12,7 @@ struct SettingsView: View {
     
     @AppStorage(AppConfig.Keys.hideCommandInList) private var hideCommandInList = true
     @AppStorage(AppConfig.Keys.smartFilter) private var smartFilter = true
-    @AppStorage(AppConfig.Keys.glueToTerminal) private var glueToTerminal = false
+    @AppStorage(AppConfig.Keys.snapToTerminal) private var snapToTerminal = false
     
     @AppStorage(AppConfig.Keys.globalShortcutKey) private var globalShortcutKey = "n"
     @AppStorage(AppConfig.Keys.globalShortcutModifier) private var globalShortcutModifier = "command"
@@ -174,7 +174,12 @@ struct SettingsView: View {
                         
                         Toggle("Hide Command in List", isOn: $hideCommandInList)
                         Toggle("Smart Search (Multi-word)", isOn: $smartFilter)
-                        Toggle("Glue to Terminal (Left Side)", isOn: $glueToTerminal)
+                        Toggle("Snap to Terminal (Left Side)", isOn: $snapToTerminal)
+                            .onChange(of: snapToTerminal) { newValue in
+                                if newValue {
+                                    NSApp.sendAction(#selector(AppDelegate.snapToTerminal), to: nil, from: nil)
+                                }
+                            }
                         Toggle("Copy on Select", isOn: $copyOnSelect)
                         Toggle("Paste on Right Click", isOn: $pasteOnRightClick)
                     }

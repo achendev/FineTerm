@@ -43,8 +43,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         snapToTerminal()
     }
     
-    func snapToTerminal() {
-        if !UserDefaults.standard.bool(forKey: AppConfig.Keys.glueToTerminal) { return }
+    @objc func snapToTerminal() {
+        if !UserDefaults.standard.bool(forKey: AppConfig.Keys.snapToTerminal) { return }
         
         // 1. Find the Terminal App Process
         guard let termApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Terminal" }) else { return }
@@ -59,13 +59,60 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let ownerPID = info[kCGWindowOwnerPID as String] as? Int,
                   ownerPID == pid,
                   let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat],
-                  let width = boundsDict["Width"],
+                  var width = boundsDict["Width"],
                   let height = boundsDict["Height"],
                   width > 100, height > 100 else { continue }
             
-            // Assuming the first match is the main/front one (CGWindowList is ordered)
-            let x = boundsDict["X"] ?? 0
+            var x = boundsDict["X"] ?? 0
             let y = boundsDict["Y"] ?? 0
+            
+            let fixedWidth: CGFloat = 250
+            
+            // --- RESIZE LOGIC START ---
+            // Determine which screen the window is on to handle multi-monitor setups correctly
+            var targetScreen = NSScreen.screens.first
+            for screen in NSScreen.screens {
+                // Determine if window's left edge is within this screen's X-range
+                if x >= screen.frame.minX && x < screen.frame.maxX {
+                    targetScreen = screen
+                    break
+                }
+            }
+            
+            if let screen = targetScreen {
+                let minX = screen.frame.minX
+                let screenWidth = screen.frame.width - 3
+                
+                // If Terminal is too far left to accommodate FineTerm (X < FixedWidth + ScreenMinX)
+                if x - minX < fixedWidth {
+                    let newTermX = minX + fixedWidth
+                    var newTermWidth = width
+                    
+                    // If moving right pushes it off screen, shrink it
+                    if newTermX + newTermWidth > minX + screenWidth {
+                        newTermWidth = (minX + screenWidth) - newTermX
+                    }
+                    
+                    // Apply changes via AppleScript if the frame differs significantly
+                    if abs(newTermX - x) > 1 || abs(newTermWidth - width) > 1 {
+                        let script = """
+                        tell application "System Events" to tell process "Terminal"
+                            set position of window 1 to {\(Int(newTermX)), \(Int(y))}
+                            set size of window 1 to {\(Int(newTermWidth)), \(Int(height))}
+                        end tell
+                        """
+                        var error: NSDictionary?
+                        if let nsScript = NSAppleScript(source: script) {
+                            nsScript.executeAndReturnError(&error)
+                        }
+                        
+                        // Update local vars for FineTerm calculation
+                        x = newTermX
+                        width = newTermWidth
+                    }
+                }
+            }
+            // --- RESIZE LOGIC END ---
             
             // 4. Calculate new frame for FineTerm
             // Note: Cocoa coords (0,0) is Bottom-Left. CG coords (0,0) is Top-Left.
@@ -77,8 +124,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // screenHeight - (bottom edge) = Cocoa Y
             let cocoaY = screenHeight - (y + height)
             
-            // Force minimal width when glued
-            let fixedWidth: CGFloat = 250
             let cocoaX = x - fixedWidth
             
             // Create new rect

@@ -49,6 +49,35 @@ class ClipboardViewModel: ObservableObject {
     }
 }
 
+// Helper for detecting Modifier Keys (Shift)
+class FlagsMonitor: ObservableObject {
+    @Published var isShiftDown = false
+    private var monitor: Any?
+    
+    init() {
+        self.isShiftDown = NSEvent.modifierFlags.contains(.shift)
+    }
+    
+    func start() {
+        if monitor != nil { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            DispatchQueue.main.async {
+                self?.isShiftDown = event.modifierFlags.contains(.shift)
+            }
+            return event
+        }
+    }
+    
+    func stop() {
+        if let monitor = monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+    
+    deinit { stop() }
+}
+
 struct ClipboardHistoryView: View {
     @ObservedObject var store: ClipboardStore
     var onClose: () -> Void
@@ -56,6 +85,7 @@ struct ClipboardHistoryView: View {
     @StateObject private var viewModel: ClipboardViewModel
     @FocusState private var isSearchFocused: Bool
     @StateObject private var keyHandler = ClipboardKeyHandler()
+    @StateObject private var flagsMonitor = FlagsMonitor()
     
     init(store: ClipboardStore, onClose: @escaping () -> Void) {
         self.store = store
@@ -95,7 +125,9 @@ struct ClipboardHistoryView: View {
                                 ClipboardRow(
                                     item: item,
                                     isHighlighted: item.id == viewModel.selectedItemID,
-                                    action: { select(item) }
+                                    isShiftDown: flagsMonitor.isShiftDown,
+                                    action: { select(item) },
+                                    onDelete: { delete(item) }
                                 )
                                 .id(item.id) // Stable Identity for ScrollViewReader
                                 
@@ -122,6 +154,9 @@ struct ClipboardHistoryView: View {
                 isSearchFocused = true
             }
             
+            // Start Monitoring Modifiers
+            flagsMonitor.start()
+            
             // Keyboard Handling
             keyHandler.start { event in
                 switch event.keyCode {
@@ -143,12 +178,17 @@ struct ClipboardHistoryView: View {
         }
         .onDisappear {
             keyHandler.stop()
+            flagsMonitor.stop()
         }
     }
     
     func select(_ item: ClipboardItem) {
         store.copyToClipboard(item: item)
         onClose()
+    }
+    
+    func delete(_ item: ClipboardItem) {
+        store.delete(id: item.id)
     }
 }
 
@@ -182,7 +222,9 @@ private let rowDateFormatter: DateFormatter = {
 struct ClipboardRow: View {
     let item: ClipboardItem
     let isHighlighted: Bool
+    var isShiftDown: Bool
     let action: () -> Void
+    let onDelete: () -> Void
     
     @AppStorage(AppConfig.Keys.clipboardMaxLines) private var maxLines = 2
     @State private var isHovering = false
@@ -196,15 +238,25 @@ struct ClipboardRow: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .foregroundColor(isHighlighted ? .white : .primary)
+                // Reserve space on the right for Timestamp/Trash so text doesn't flow under it
+                .padding(.trailing, 20)
             
-            // Timestamp (Overlay at top right, very small)
-            Text(rowDateFormatter.string(from: item.timestamp))
-                .font(.system(size: 9, weight: .regular, design: .default))
-                // Use opacity to make it subtle so it floats over content if overlaps
-                .foregroundColor(isHighlighted ? .white.opacity(0.6) : .secondary.opacity(0.6))
-                // Added margins as requested
-                .padding(.top, -7.2)
-                .padding(.trailing, -7.2)
+            // Top Right: Either Timestamp or Trash
+            if isShiftDown {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.caption) // Matches session manager size
+                        .foregroundColor(isHighlighted ? .white : .gray) // Matches session manager color
+                }
+                .buttonStyle(.borderless)
+                .help("Delete item")
+            } else {
+                Text(rowDateFormatter.string(from: item.timestamp))
+                    .font(.system(size: 9, weight: .regular, design: .default))
+                    .foregroundColor(isHighlighted ? .white.opacity(0.6) : .secondary.opacity(0.6))
+                    .padding(.top, -7.2)
+                    .padding(.trailing, -7.2)
+            }
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)

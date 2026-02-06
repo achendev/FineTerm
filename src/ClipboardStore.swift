@@ -93,6 +93,11 @@ class ClipboardStore: ObservableObject {
         save()
     }
     
+    func delete(id: UUID) {
+        history.removeAll { $0.id == id }
+        save()
+    }
+    
     func copyToClipboard(item: ClipboardItem) {
         let pb = NSPasteboard.general
         pb.clearContents()

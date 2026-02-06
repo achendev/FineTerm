@@ -172,6 +172,13 @@ class ClipboardKeyHandler: ObservableObject {
     }
 }
 
+// Static Date Formatter for Row Performance
+private let rowDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "HH:mm dd/MM/yyyy"
+    return formatter
+}()
+
 struct ClipboardRow: View {
     let item: ClipboardItem
     let isHighlighted: Bool
@@ -181,17 +188,26 @@ struct ClipboardRow: View {
     @State private var isHovering = false
     
     var body: some View {
-        HStack(alignment: .top) {
+        ZStack(alignment: .topTrailing) {
+            // Content
             Text(item.content)
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(maxLines > 0 ? maxLines : nil)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // Color optimization: render simplified colors
                 .foregroundColor(isHighlighted ? .white : .primary)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
+            
+            // Timestamp (Overlay at top right, very small)
+            Text(rowDateFormatter.string(from: item.timestamp))
+                .font(.system(size: 9, weight: .regular, design: .default))
+                // Use opacity to make it subtle so it floats over content if overlaps
+                .foregroundColor(isHighlighted ? .white.opacity(0.6) : .secondary.opacity(0.6))
+                // Added margins as requested
+                .padding(.top, -7.2)
+                .padding(.trailing, -7.2)
         }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
         .contentShape(Rectangle())
         .background(
             isHighlighted ? AppColors.activeHighlight : (isHovering ? AppColors.activeHighlight.opacity(0.1) : Color.clear)

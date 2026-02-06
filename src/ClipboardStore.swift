@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import CryptoKit
 
 class ClipboardStore: ObservableObject {
     @Published var history: [ClipboardItem] = []
@@ -8,12 +9,46 @@ class ClipboardStore: ObservableObject {
     private var timer: Timer?
     private var lastChangeCount: Int
     
+    // Key for storing the encryption key in UserDefaults
+    private let keyStorageName = "FineTermClipboardKey"
+    
     init() {
-        let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
-        fileURL = paths[0].appendingPathComponent("clipboard_history.json")
+        let fileManager = FileManager.default
+        
+        // Target: ~/Library/Application Support/<BundleID>/clipboard_history.enc
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.local.FineTerm"
+        let appDir = appSupport.appendingPathComponent(bundleID)
+        
+        // Ensure directory exists
+        try? fileManager.createDirectory(at: appDir, withIntermediateDirectories: true, attributes: nil)
+        
+        fileURL = appDir.appendingPathComponent("clipboard_history.enc")
         lastChangeCount = NSPasteboard.general.changeCount
         
+        // Migrate old plaintext data if exists
+        migrateLegacyData()
+        
         load()
+    }
+    
+    private func migrateLegacyData() {
+        let fileManager = FileManager.default
+        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let oldURL = docs.appendingPathComponent("clipboard_history.json")
+        
+        // If old file exists and new file doesn't
+        if fileManager.fileExists(atPath: oldURL.path) && !fileManager.fileExists(atPath: fileURL.path) {
+            print("Migrating legacy clipboard history...")
+            if let data = try? Data(contentsOf: oldURL),
+               let loaded = try? JSONDecoder().decode([ClipboardItem].self, from: data) {
+                self.history = loaded
+                // Save immediately to new encrypted location
+                save()
+                // Remove old plaintext file
+                try? fileManager.removeItem(at: oldURL)
+            }
+        }
     }
     
     func startMonitoring() {
@@ -33,7 +68,6 @@ class ClipboardStore: ObservableObject {
             lastChangeCount = currentCount
             
             if let newString = NSPasteboard.general.string(forType: .string) {
-                // Avoid empty strings
                 if !newString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     add(content: newString)
                 }
@@ -42,9 +76,6 @@ class ClipboardStore: ObservableObject {
     }
     
     func add(content: String) {
-        // According to requirements: "brought back element just leave where it is and it's value also becoming new element"
-        // This implies we don't deduplicate against the existing list, we just push to top.
-        // However, standard clipboard managers usually avoid consecutive duplicates.
         if let first = history.first, first.content == content {
             return
         }
@@ -52,7 +83,6 @@ class ClipboardStore: ObservableObject {
         let item = ClipboardItem(content: content, timestamp: Date())
         history.insert(item, at: 0)
         
-        // Read limit from settings
         let limit = UserDefaults.standard.integer(forKey: AppConfig.Keys.clipboardHistorySize)
         let effectiveLimit = limit > 0 ? limit : 100
         
@@ -67,7 +97,6 @@ class ClipboardStore: ObservableObject {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(item.content, forType: .string)
-        // The timer will pick this up as a change and add it to history top as well
     }
     
     func clear() {
@@ -75,17 +104,50 @@ class ClipboardStore: ObservableObject {
         save()
     }
     
+    // MARK: - Encryption & Persistence
+    
+    private func getEncryptionKey() -> SymmetricKey {
+        let defaults = UserDefaults.standard
+        if let keyString = defaults.string(forKey: keyStorageName),
+           let keyData = Data(base64Encoded: keyString) {
+            return SymmetricKey(data: keyData)
+        } else {
+            // Generate new 256-bit key
+            let key = SymmetricKey(size: .bits256)
+            let keyData = key.withUnsafeBytes { Data($0) }
+            defaults.set(keyData.base64EncodedString(), forKey: keyStorageName)
+            return key
+        }
+    }
+
     private func save() {
-        if let encoded = try? JSONEncoder().encode(history) {
-            try? encoded.write(to: fileURL)
+        do {
+            let data = try JSONEncoder().encode(history)
+            let key = getEncryptionKey()
+            
+            // Encrypt using AES-GCM
+            let sealedBox = try AES.GCM.seal(data, using: key)
+            if let combined = sealedBox.combined {
+                try combined.write(to: fileURL)
+            }
+        } catch {
+            print("Clipboard Save Error: \(error)")
         }
     }
     
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        if let loaded = try? JSONDecoder().decode([ClipboardItem].self, from: data) {
-            self.history = loaded
+        guard let encryptedData = try? Data(contentsOf: fileURL) else { return }
+        
+        do {
+            let key = getEncryptionKey()
+            let sealedBox = try AES.GCM.SealedBox(combined: encryptedData)
+            let decryptedData = try AES.GCM.open(sealedBox, using: key)
+            
+            if let loaded = try? JSONDecoder().decode([ClipboardItem].self, from: decryptedData) {
+                self.history = loaded
+            }
+        } catch {
+            print("Clipboard Load Error (Decryption failed): \(error)")
         }
     }
 }
-

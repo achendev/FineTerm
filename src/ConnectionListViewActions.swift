@@ -75,7 +75,7 @@ extension ConnectionListView {
         let changeTerminalName = UserDefaults.standard.bool(forKey: "changeTerminalName")
         
         // Background terminal name setting
-        let terminalNamePrefix = changeTerminalName ? "{ sleep 2 ; printf '\\e]1;%s\\a' '\(conn.name)' ; } & " : ""
+        let terminalNamePrefix = changeTerminalName ? "{ ( sleep 2 ; printf '\\e]1;%s\\a' '\(conn.name)' ) 2>/dev/null & } 2>/dev/null ; clear ; " : ""
         
         var prefix = conn.usePrefix ? (UserDefaults.standard.string(forKey: "commandPrefix") ?? "") : ""
         var suffix = conn.useSuffix ? (UserDefaults.standard.string(forKey: "commandSuffix") ?? "") : ""

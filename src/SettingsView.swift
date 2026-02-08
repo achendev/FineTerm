@@ -248,9 +248,8 @@ struct SettingsView: View {
                         Toggle("Smart Search (Multi-word)", isOn: $smartFilter)
                         Toggle("Snap to Terminal (Left Side)", isOn: $snapToTerminal)
                             .onChange(of: snapToTerminal) { newValue in
-                                if newValue {
-                                    NSApp.sendAction(#selector(AppDelegate.snapToTerminal), to: nil, from: nil)
-                                }
+                                // Trigger refresh of observer in AppDelegate
+                                NSApp.sendAction(#selector(AppDelegate.refreshTerminalObserverState), to: nil, from: nil)
                             }
                         Toggle("Copy on Select", isOn: $copyOnSelect)
                         Toggle("Paste on Right Click", isOn: $pasteOnRightClick)

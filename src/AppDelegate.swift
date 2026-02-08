@@ -12,6 +12,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var clipboardStore: ClipboardStore!
     var clipboardManager: ClipboardWindowManager!
     var settingsManager: SettingsWindowManager!
+    
+    // Live Snapping Observer
+    var terminalObserver: TerminalWindowObserver?
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // 1. Setup Logging (First priority to capture initialization)
@@ -40,6 +43,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         // 8. Warmup Text Editor Detector
         TextEditorBridge.shared.warmUp()
+        
+        // 9. Setup Live Snapping Observer
+        setupTerminalObserver()
+    }
+    
+    func setupTerminalObserver() {
+        terminalObserver = TerminalWindowObserver { [weak self] in
+            self?.snapToTerminal()
+        }
+        
+        // Update state initially
+        refreshTerminalObserverState()
+        
+        // Monitor Application Lifecycle to restart observer if Terminal restarts
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] notif in
+            guard let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier == "com.apple.Terminal" else { return }
+            self?.refreshTerminalObserverState()
+        }
+        
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] notif in
+            guard let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier == "com.apple.Terminal" else { return }
+            self?.terminalObserver?.stop()
+        }
+    }
+    
+    @objc func refreshTerminalObserverState() {
+        let shouldSnap = UserDefaults.standard.bool(forKey: AppConfig.Keys.snapToTerminal)
+        if shouldSnap {
+            terminalObserver?.start()
+            snapToTerminal()
+        } else {
+            terminalObserver?.stop()
+        }
     }
     
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -70,6 +108,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let y = boundsDict["Y"] ?? 0
             
             let fixedWidth: CGFloat = 250
+            let gap: CGFloat = 1 // 1px gap
             
             // --- RESIZE LOGIC START ---
             // Determine which screen the window is on to handle multi-monitor setups correctly
@@ -86,9 +125,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 let minX = screen.frame.minX
                 let screenWidth = screen.frame.width - 3
                 
-                // If Terminal is too far left to accommodate FineTerm (X < FixedWidth + ScreenMinX)
-                if x - minX < fixedWidth {
-                    let newTermX = minX + fixedWidth
+                // If Terminal is too far left to accommodate FineTerm + Gap (X < FixedWidth + Gap + ScreenMinX)
+                if x - minX < fixedWidth + gap {
+                    let newTermX = minX + fixedWidth + gap
                     var newTermWidth = width
                     
                     // If moving right pushes it off screen, shrink it
@@ -98,6 +137,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     
                     // Apply changes via AppleScript if the frame differs significantly
                     if abs(newTermX - x) > 1 || abs(newTermWidth - width) > 1 {
+                        // Optimization: Only run AppleScript if absolutely necessary to avoid lag
+                        // This might cause lag during drag if the user pushes left, but it protects the layout.
                         let script = """
                         tell application "System Events" to tell process "Terminal"
                             set position of window 1 to {\(Int(newTermX)), \(Int(y))}
@@ -127,17 +168,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // screenHeight - (bottom edge) = Cocoa Y
             let cocoaY = screenHeight - (y + height)
             
-            let cocoaX = x - fixedWidth
+            let cocoaX = x - fixedWidth - gap
             
             // Create new rect
             let newFrame = NSRect(x: cocoaX, y: cocoaY, width: fixedWidth, height: height)
             
             // 5. Apply Position
-            window.setFrame(newFrame, display: true)
+            // Only update if changed to avoid jitter
+            if window.frame != newFrame {
+                window.setFrame(newFrame, display: true)
+            }
             
             // Debug Log
             if UserDefaults.standard.bool(forKey: AppConfig.Keys.debugMode) {
-                print("DEBUG: Snapped to Terminal at X:\(cocoaX), Y:\(cocoaY), H:\(height), W:\(fixedWidth)")
+                print("DEBUG: Snapped to Terminal at X:\(cocoaX), Y:\(cocoaY), H:\(height), W:\(fixedWidth) Gap:\(gap)")
             }
             return
         }
@@ -232,6 +276,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         keyboardInterceptor?.start()
         
         clipboardStore.startMonitoring()
+        
+        // Start live snapping if enabled
+        refreshTerminalObserverState()
     }
     
     func setupLocalShortcutMonitor() {
@@ -309,6 +356,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mouseInterceptor?.stop()
         keyboardInterceptor?.stop()
         clipboardStore.stopMonitoring()
+        terminalObserver?.stop()
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

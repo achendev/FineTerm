@@ -173,7 +173,8 @@ struct ClipboardHistoryView: View {
                     return true
                 case 36: // Enter
                     if let item = viewModel.getSelectedItem() {
-                        if event.modifierFlags.contains(.shift) {
+                        let shiftEnterEnabled = UserDefaults.standard.bool(forKey: AppConfig.Keys.clipboardShiftEnterToEditor)
+                        if shiftEnterEnabled && event.modifierFlags.contains(.shift) {
                             TextEditorBridge.shared.open(content: item.content)
                             onClose()
                         } else {

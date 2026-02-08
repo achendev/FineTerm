@@ -76,11 +76,24 @@ class ClipboardStore: ObservableObject {
     }
     
     func add(content: String) {
+        // Check duplication
         if let first = history.first, first.content == content {
             return
         }
         
-        let item = ClipboardItem(content: content, timestamp: Date())
+        var finalContent = content
+        
+        // Truncate if larger than limit
+        let limitKB = UserDefaults.standard.integer(forKey: AppConfig.Keys.clipboardItemSizeLimitKB)
+        // Ensure limit is reasonable (min 1KB if set, usually defaults to 10)
+        let safeLimitKB = limitKB > 0 ? limitKB : 10
+        let limitBytes = safeLimitKB * 1024
+        
+        if finalContent.utf8.count > limitBytes {
+            finalContent = truncate(string: finalContent, limitBytes: limitBytes)
+        }
+        
+        let item = ClipboardItem(content: finalContent, timestamp: Date())
         history.insert(item, at: 0)
         
         let limit = UserDefaults.standard.integer(forKey: AppConfig.Keys.clipboardHistorySize)
@@ -91,6 +104,35 @@ class ClipboardStore: ObservableObject {
         }
         
         save()
+    }
+    
+    private func truncate(string: String, limitBytes: Int) -> String {
+        guard let data = string.data(using: .utf8) else { return string }
+        
+        // Fast path
+        if data.count <= limitBytes { return string }
+        
+        // Prefix bytes
+        let truncatedData = data.prefix(limitBytes)
+        
+        // Attempt to create string. If successful, we are good.
+        // If nil (cut in middle of multi-byte char), back off slightly.
+        if let safeString = String(data: truncatedData, encoding: .utf8) {
+            return safeString
+        }
+        
+        // Back off 1-3 bytes to find valid UTF8 boundary
+        for i in 1...3 {
+            if limitBytes - i > 0 {
+                let smaller = data.prefix(limitBytes - i)
+                if let safeString = String(data: smaller, encoding: .utf8) {
+                    return safeString
+                }
+            }
+        }
+        
+        // Fallback (extremely unlikely for valid UTF8 string)
+        return String(string.prefix(limitBytes))
     }
     
     func delete(id: UUID) {

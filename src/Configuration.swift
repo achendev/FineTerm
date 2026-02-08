@@ -26,6 +26,16 @@ struct AppConfig {
         static let clipboardShortcutModifier = "clipboardShortcutModifier"
         static let clipboardMaxLines = "clipboardMaxLines"
         static let clipboardHistorySize = "clipboardHistorySize"
+        
+        // Text Editor Integration
+        static let clipboardShiftEnterToEditor = "clipboardShiftEnterToEditor"
+        static let clipboardEditorBundleID = "clipboardEditorBundleID"
+        static let clipboardTempExtension = "clipboardTempExtension"
+        static let clipboardAutoDeleteTempFile = "clipboardAutoDeleteTempFile"
+        static let clipboardAutoDeleteDelay = "clipboardAutoDeleteDelay"
+        
+        // Storage Limit
+        static let clipboardItemSizeLimitKB = "clipboardItemSizeLimitKB"
     }
     
     static let defaults: [String: Any] = [
@@ -52,7 +62,17 @@ struct AppConfig {
         Keys.clipboardShortcutKey: "u",
         Keys.clipboardShortcutModifier: "command",
         Keys.clipboardMaxLines: 2,
-        Keys.clipboardHistorySize: 100
+        Keys.clipboardHistorySize: 100,
+        
+        // Defaults for Editor
+        Keys.clipboardShiftEnterToEditor: true,
+        Keys.clipboardEditorBundleID: "com.sublimetext.4", // Will fallback if missing
+        Keys.clipboardTempExtension: "sh",
+        Keys.clipboardAutoDeleteTempFile: true,
+        Keys.clipboardAutoDeleteDelay: 2.0,
+        
+        // Default 10KB
+        Keys.clipboardItemSizeLimitKB: 10
     ]
     
     static func registerDefaults() {

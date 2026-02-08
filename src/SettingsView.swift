@@ -27,7 +27,20 @@ struct SettingsView: View {
     @AppStorage(AppConfig.Keys.clipboardMaxLines) private var clipboardMaxLines = 2
     @AppStorage(AppConfig.Keys.clipboardHistorySize) private var clipboardHistorySize = 100
     
+    // New Text Editor Settings
+    @AppStorage(AppConfig.Keys.clipboardShiftEnterToEditor) private var clipboardShiftEnterToEditor = true
+    @AppStorage(AppConfig.Keys.clipboardEditorBundleID) private var clipboardEditorBundleID = "com.apple.TextEdit"
+    @AppStorage(AppConfig.Keys.clipboardTempExtension) private var clipboardTempExtension = "sh"
+    @AppStorage(AppConfig.Keys.clipboardAutoDeleteTempFile) private var clipboardAutoDeleteTempFile = true
+    @AppStorage(AppConfig.Keys.clipboardAutoDeleteDelay) private var clipboardAutoDeleteDelay = 2.0
+    
+    // Storage Limit
+    @AppStorage(AppConfig.Keys.clipboardItemSizeLimitKB) private var clipboardItemSizeLimitKB = 10
+    
     @State private var runOnStartup: Bool = LaunchAtLoginManager.isEnabled()
+    
+    // Observe the bridge for the list of editors
+    @ObservedObject private var editorBridge = TextEditorBridge.shared
     
     var body: some View {
         VStack(spacing: 0) {
@@ -120,6 +133,55 @@ struct SettingsView: View {
                             }
                             .padding(.leading, 10)
                             
+                            // Editor Integration
+                            VStack(alignment: .leading, spacing: 6) {
+                                Toggle("Shift + Enter opens in Text Editor", isOn: $clipboardShiftEnterToEditor)
+                                
+                                if clipboardShiftEnterToEditor {
+                                    HStack {
+                                        Text("Editor:")
+                                            .font(.caption)
+                                            .frame(width: 70, alignment: .leading)
+                                        
+                                        Picker("", selection: $clipboardEditorBundleID) {
+                                            ForEach(editorBridge.availableEditors) { editor in
+                                                Text(editor.name)
+                                                    .tag(editor.id)
+                                            }
+                                        }
+                                        .labelsHidden()
+                                    }
+                                    .padding(.leading, 20)
+                                    
+                                    HStack {
+                                        Text("Extension:")
+                                            .font(.caption)
+                                            .frame(width: 70, alignment: .leading)
+                                        
+                                        TextField("sh", text: $clipboardTempExtension)
+                                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                                            .frame(width: 60)
+                                    }
+                                    .padding(.leading, 20)
+                                    
+                                    HStack(spacing: 4) {
+                                        Toggle("Auto delete temp file after:", isOn: $clipboardAutoDeleteTempFile)
+                                            .font(.caption)
+                                        
+                                        if clipboardAutoDeleteTempFile {
+                                            TextField("2", value: $clipboardAutoDeleteDelay, formatter: NumberFormatter())
+                                                .frame(width: 40)
+                                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                            Text("sec")
+                                                .font(.caption)
+                                        }
+                                    }
+                                    .padding(.leading, 20)
+                                }
+                            }
+                            .padding(.top, 4)
+                            
+                            // Storage
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Storage:")
                                     .font(.caption)
@@ -127,7 +189,17 @@ struct SettingsView: View {
                                 HStack {
                                     Text("Max Items:")
                                         .font(.caption)
+                                        .frame(width: 80, alignment: .leading)
                                     TextField("100", value: $clipboardHistorySize, formatter: NumberFormatter())
+                                        .frame(width: 50)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                }
+                                
+                                HStack {
+                                    Text("Item Limit (KB):")
+                                        .font(.caption)
+                                        .frame(width: 80, alignment: .leading)
+                                    TextField("10", value: $clipboardItemSizeLimitKB, formatter: NumberFormatter())
                                         .frame(width: 50)
                                         .textFieldStyle(RoundedBorderTextFieldStyle())
                                 }
@@ -201,5 +273,8 @@ struct SettingsView: View {
             }
         }
         .frame(minWidth: 400, minHeight: 600)
+        .onAppear {
+            editorBridge.refreshEditors()
+        }
     }
 }

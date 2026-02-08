@@ -173,7 +173,12 @@ struct ClipboardHistoryView: View {
                     return true
                 case 36: // Enter
                     if let item = viewModel.getSelectedItem() {
-                        select(item)
+                        if event.modifierFlags.contains(.shift) {
+                            TextEditorBridge.shared.open(content: item.content)
+                            onClose()
+                        } else {
+                            select(item)
+                        }
                     }
                     return true
                 default:

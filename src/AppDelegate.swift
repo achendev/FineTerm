@@ -37,6 +37,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         // 7. Setup Local Shortcut Monitor
         setupLocalShortcutMonitor()
+
+        // 8. Warmup Text Editor Detector
+        TextEditorBridge.shared.warmUp()
     }
     
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -321,4 +324,3 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return true
     }
 }
-

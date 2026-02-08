@@ -89,18 +89,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         if shouldSnap && isTerminalRunning {
             terminalObserver?.start()
-            
-            // Allow window to exist on all spaces so it can "follow" the Terminal's presence
-            // and hide/show itself based on whether Terminal is on the current space.
-            window.collectionBehavior.insert(.canJoinAllSpaces)
-            
             snapToTerminal()
         } else {
             terminalObserver?.stop()
-            
-            // Revert to standard behavior. Removing .canJoinAllSpaces prevents the app
-            // from following the user to empty workspaces when Terminal is closed.
-            window.collectionBehavior.remove(.canJoinAllSpaces)
         }
     }
     
@@ -208,9 +199,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             
         } else {
             // Terminal is NOT on this space (or minimized/hidden)
-            // If Snapping is active, FineTerm should "Follow Terminal", meaning it should NOT be here.
-            if window.isVisible {
-                window.orderOut(nil)
+            // Fix Blink: Do not blindly orderOut if we just switched spaces.
+            // Only hide if the app itself is hidden.
+            if termApp.isHidden {
+                if window.isVisible {
+                    window.orderOut(nil)
+                }
             }
         }
     }

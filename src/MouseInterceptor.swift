@@ -125,15 +125,20 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
         let currentPoint = event.location
         let dist = hypot(currentPoint.x - lastMouseDownPoint.x, currentPoint.y - lastMouseDownPoint.y)
         let clickCount = event.getIntegerValueField(.mouseEventClickState)
+        // Detect Shift key for extended selection
+        let isShiftDown = event.flags.contains(.maskShift)
         
         // Reset lastMouseDownPoint to avoid stale state
         lastMouseDownPoint = .zero
         
-        // Trigger Copy if dragged > 5px OR Double/Triple Click
-        if dist > 5.0 || clickCount >= 2 {
+        // Trigger Copy if:
+        // 1. Dragged > 5px
+        // 2. Double/Triple Click (clickCount >= 2)
+        // 3. Shift is held down (Shift+Click extends selection)
+        if dist > 5.0 || clickCount >= 2 || isShiftDown {
             
             if isDebug {
-                print("DEBUG: Selection Detected (Drag: \(Int(dist))px, Clicks: \(clickCount)). Queuing Copy...")
+                print("DEBUG: Selection Detected (Drag: \(Int(dist))px, Clicks: \(clickCount), Shift: \(isShiftDown)). Queuing Copy...")
             }
             
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {

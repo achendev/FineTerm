@@ -194,7 +194,7 @@ struct SettingsView: View {
                                         .font(.caption)
                                         .frame(width: 90, alignment: .leading)
                                     TextField("100", value: $clipboardHistorySize, formatter: NumberFormatter())
-                                        .frame(width: 50)
+                                        .frame(width: 80)
                                         .textFieldStyle(RoundedBorderTextFieldStyle())
                                 }
                                 
@@ -203,7 +203,7 @@ struct SettingsView: View {
                                         .font(.caption)
                                         .frame(width: 90, alignment: .leading)
                                     TextField("50", value: $clipboardMaxImages, formatter: NumberFormatter())
-                                        .frame(width: 50)
+                                        .frame(width: 80)
                                         .textFieldStyle(RoundedBorderTextFieldStyle())
                                 }
                                 
@@ -212,7 +212,7 @@ struct SettingsView: View {
                                         .font(.caption)
                                         .frame(width: 90, alignment: .leading)
                                     TextField("10", value: $clipboardItemSizeLimitKB, formatter: NumberFormatter())
-                                        .frame(width: 50)
+                                        .frame(width: 80)
                                         .textFieldStyle(RoundedBorderTextFieldStyle())
                                 }
                                 
@@ -221,7 +221,7 @@ struct SettingsView: View {
                                         .font(.caption)
                                         .frame(width: 90, alignment: .leading)
                                     TextField("5", value: $clipboardLargeItemSizeLimitMB, formatter: NumberFormatter())
-                                        .frame(width: 50)
+                                        .frame(width: 80)
                                         .textFieldStyle(RoundedBorderTextFieldStyle())
                                 }
                                 

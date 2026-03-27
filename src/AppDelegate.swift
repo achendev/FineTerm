@@ -67,25 +67,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         // Monitor Application Lifecycle to enable/disable snapping based on Terminal's presence
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] notif in
-            guard let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  app.bundleIdentifier == "com.apple.Terminal" else { return }
-            self?.refreshTerminalObserverState()
+            guard let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+            if app.bundleIdentifier == target {
+                self?.refreshTerminalObserverState()
+            }
         }
         
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] notif in
-            guard let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  app.bundleIdentifier == "com.apple.Terminal" else { return }
+            guard let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
             
             // CRITICAL FIX: Revert window behavior immediately when Terminal quits
-            self?.refreshTerminalObserverState()
+            if app.bundleIdentifier == target {
+                self?.refreshTerminalObserverState()
+            }
         }
     }
     
     @objc func refreshTerminalObserverState() {
         let shouldSnap = UserDefaults.standard.bool(forKey: AppConfig.Keys.snapToTerminal)
+        let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
         
         // Check if Terminal is actually running
-        let terminalApp = NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == "com.apple.Terminal" }
+        let terminalApp = NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == target }
         let isTerminalRunning = terminalApp != nil && !terminalApp!.isTerminated
         
         if shouldSnap && isTerminalRunning {
@@ -103,8 +108,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func snapToTerminal() {
         if !UserDefaults.standard.bool(forKey: AppConfig.Keys.snapToTerminal) { return }
         
+        let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+        
         // 1. Find the Terminal App Process
-        guard let termApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Terminal" }) else { return }
+        guard let termApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == target }) else { return }
         let pid = termApp.processIdentifier
         
         // 2. Get Window List to find Terminal's window bounds ON CURRENT SCREEN
@@ -171,8 +178,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     }
                     
                     if abs(newTermX - x) > 1 || abs(newTermWidth - width) > 1 {
+                        var processName = "Terminal"
+                        if target == "com.googlecode.iterm2" { processName = "iTerm2" }
+                        else if target == "com.mitchellh.ghostty" { processName = "Ghostty" }
+                        
                         let script = """
-                        tell application "System Events" to tell process "Terminal"
+                        tell application "System Events" to tell process "\(processName)"
                             set position of window 1 to {\(Int(newTermX)), \(Int(y))}
                             set size of window 1 to {\(Int(newTermWidth)), \(Int(height))}
                         end tell
@@ -233,7 +244,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func setupMainWindow() {
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 500),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask:[.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 320, height: 200)

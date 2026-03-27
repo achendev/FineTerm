@@ -183,7 +183,8 @@ func activateFineTerm() {
 
 func activateTerminal() {
     DispatchQueue.main.async {
-        activateApp(bundleID: "com.apple.Terminal")
+        let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+        activateApp(bundleID: target)
     }
 }
 
@@ -265,7 +266,8 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     
     // Get Robust Front App
     let frontApp = getRealFrontmostApp()
-    let isTerminalFront = frontApp?.bundleIdentifier == "com.apple.Terminal"
+    let target = defaults.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+    let isTerminalFront = frontApp?.bundleIdentifier == target
     let isFineTermFront = NSRunningApplication.current.isActive // Absolute local truth
     
     if let mainCode = KeyboardInterceptor.getKeyCode(for: mainKey),
@@ -300,7 +302,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         if isTerminalFront {
             if secondActivation && thirdActivation,
                let originID = savedOriginBundleID,
-               originID != "com.apple.Terminal",
+               originID != target,
                originID != Bundle.main.bundleIdentifier {
                 
                 if debug { print("DEBUG: Step 3: Terminal -> Origin (\(originID))") }
@@ -320,7 +322,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         if !isFineTermFront && !isTerminalFront {
             if let app = frontApp, let bundleID = app.bundleIdentifier {
                 // Prevent overwriting origin with FineTerm or Terminal
-                if bundleID != Bundle.main.bundleIdentifier && bundleID != "com.apple.Terminal" {
+                if bundleID != Bundle.main.bundleIdentifier && bundleID != target {
                     savedOriginBundleID = bundleID
                     if debug { print("DEBUG: Step 1: Origin (\(app.localizedName ?? bundleID)) -> FineTerm [Saved]") }
                 } else {
@@ -345,7 +347,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
             if isTerminalFront {
                 // Return to the origin app
                 if let originID = savedOriginBundleID,
-                   originID != "com.apple.Terminal",
+                   originID != target,
                    originID != Bundle.main.bundleIdentifier {
                     if debug { print("DEBUG: Terminal Toggle: Terminal -> Origin (\(originID))") }
                     DispatchQueue.main.async {
@@ -361,7 +363,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
                 // Save current app as origin and jump to Terminal
                 if !isFineTermFront {
                     if let app = frontApp, let bundleID = app.bundleIdentifier,
-                       bundleID != "com.apple.Terminal",
+                       bundleID != target,
                        bundleID != Bundle.main.bundleIdentifier {
                         savedOriginBundleID = bundleID
                         if debug { print("DEBUG: Terminal Toggle: Origin (\(bundleID)) -> Terminal") }

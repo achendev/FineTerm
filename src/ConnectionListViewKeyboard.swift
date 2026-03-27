@@ -59,10 +59,11 @@ extension ConnectionListView {
                     
                     if secondActivationToTerminal && self.isSearchFocused && self.selectedConnectionID == nil {
                         DispatchQueue.main.async {
-                            if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Terminal" }) {
+                            let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+                            if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == target }) {
                                 terminalApp.activate(options: [.activateIgnoringOtherApps])
                             } else {
-                                if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
+                                if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: target) {
                                     NSWorkspace.shared.openApplication(at: terminalURL, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
                                 }
                             }
@@ -89,8 +90,9 @@ extension ConnectionListView {
             if event.keyCode == 53 {
                 if UserDefaults.standard.bool(forKey: AppConfig.Keys.escToTerminal) {
                     DispatchQueue.main.async {
-                        if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Terminal" }) {
-                            terminalApp.activate(options: [.activateIgnoringOtherApps])
+                        let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+                        if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == target }) {
+                            terminalApp.activate(options:[.activateIgnoringOtherApps])
                         }
                     }
                 } else {
@@ -156,4 +158,3 @@ extension ConnectionListView {
         return true
     }
 }
-

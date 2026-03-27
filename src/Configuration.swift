@@ -6,6 +6,7 @@ struct AppConfig {
         static let pasteOnRightClick = "pasteOnRightClick"
         static let debugMode = "debugMode"
         
+        static let targetTerminalBundleID = "targetTerminalBundleID"
         static let commandPrefix = "commandPrefix"
         static let commandSuffix = "commandSuffix"
         static let changeTerminalName = "changeTerminalName"
@@ -49,6 +50,7 @@ struct AppConfig {
         Keys.pasteOnRightClick: true,
         Keys.debugMode: false,
         
+        Keys.targetTerminalBundleID: "com.apple.Terminal",
         Keys.commandPrefix: "unset HISTFILE ; clear ; ",
         Keys.commandSuffix: " && exit",
         Keys.changeTerminalName: true,

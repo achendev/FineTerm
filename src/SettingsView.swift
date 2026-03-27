@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage(AppConfig.Keys.pasteOnRightClick) private var pasteOnRightClick = true
     @AppStorage(AppConfig.Keys.debugMode) private var debugMode = false
     
+    @AppStorage(AppConfig.Keys.targetTerminalBundleID) private var targetTerminalBundleID = "com.apple.Terminal"
     @AppStorage(AppConfig.Keys.commandPrefix) private var commandPrefix = ""
     @AppStorage(AppConfig.Keys.commandSuffix) private var commandSuffix = ""
     @AppStorage(AppConfig.Keys.changeTerminalName) private var changeTerminalName = true
@@ -303,10 +304,24 @@ struct SettingsView: View {
                     
                     Divider()
                     
-                    // 3. Command Wrappers
+                    // 3. Terminal Application & Command Wrappers
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Command Wrappers")
+                        Text("Terminal & Command Wrappers")
                             .font(.headline)
+                        
+                        HStack {
+                            Text("Target Terminal:")
+                                .font(.caption)
+                            Picker("", selection: $targetTerminalBundleID) {
+                                Text("Apple Terminal").tag("com.apple.Terminal")
+                                Text("iTerm2").tag("com.googlecode.iterm2")
+                                Text("Ghostty").tag("com.mitchellh.ghostty")
+                            }
+                            .labelsHidden()
+                            .frame(width: 150)
+                        }
+                        
+                        Divider().padding(.vertical, 4)
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Prefix:")

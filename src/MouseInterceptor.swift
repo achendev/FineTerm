@@ -20,9 +20,11 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
         return Unmanaged.passUnretained(event)
     }
     
+    let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+    
     // Check if Terminal is active (frontmost)
     guard let frontApp = NSWorkspace.shared.frontmostApplication,
-          frontApp.bundleIdentifier == "com.apple.Terminal" else {
+          frontApp.bundleIdentifier == target else {
         return Unmanaged.passUnretained(event)
     }
     
@@ -32,7 +34,7 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
     // Replaced geometric CGWindowList check with Accessibility Hit-Test
     func isClickInTerminalWindow(_ point: CGPoint) -> Bool {
         // 1. Get Terminal PID
-        guard let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Terminal" }) else {
+        guard let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == target }) else {
             return false
         }
         let terminalPID = terminalApp.processIdentifier
@@ -132,7 +134,7 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
             }
             
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.Terminal" {
+                if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == target {
                     
                     let source = CGEventSource(stateID: .hidSystemState)
                     let cKey: CGKeyCode = 8 // 'c'

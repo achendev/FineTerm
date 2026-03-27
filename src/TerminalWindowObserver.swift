@@ -14,7 +14,8 @@ class TerminalWindowObserver {
     func start() {
         if isObserving { return }
         
-        guard let termApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Terminal" }) else { return }
+        let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+        guard let termApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == target }) else { return }
         
         let pid = termApp.processIdentifier
         terminalAppElement = AXUIElementCreateApplication(pid)

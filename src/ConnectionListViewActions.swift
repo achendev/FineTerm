@@ -72,13 +72,18 @@ extension ConnectionListView {
     func launchConnection(_ conn: Connection) {
         store.touch(id: conn.id) // UPDATE LAST USED
         
-        let changeTerminalName = UserDefaults.standard.bool(forKey: "changeTerminalName")
+        let changeTerminalName = UserDefaults.standard.bool(forKey: AppConfig.Keys.changeTerminalName)
         
         // Background terminal name setting
-        let terminalNamePrefix = changeTerminalName ? "( ( sleep 2 ; printf '\\e]1;%s\\a' '\(conn.name)' ) 2>/dev/null & ) 2>/dev/null ; clear ; " : ""
+        var terminalNamePrefix = ""
+        if changeTerminalName {
+            let template = UserDefaults.standard.string(forKey: AppConfig.Keys.terminalTabNameCommand) ?? "( ( sleep 2 ; printf '\\e]1;%s\\a' '$PROFILE_NAME' ) 2>/dev/null & ) 2>/dev/null ; clear ; "
+            terminalNamePrefix = template.replacingOccurrences(of: "$PROFILE_NAME", with: conn.name)
+                                         .replacingOccurrences(of: "$PROFILE_COMMAND", with: conn.command)
+        }
         
-        var prefix = conn.usePrefix ? (UserDefaults.standard.string(forKey: "commandPrefix") ?? "") : ""
-        var suffix = conn.useSuffix ? (UserDefaults.standard.string(forKey: "commandSuffix") ?? "") : ""
+        var prefix = conn.usePrefix ? (UserDefaults.standard.string(forKey: AppConfig.Keys.commandPrefix) ?? "") : ""
+        var suffix = conn.useSuffix ? (UserDefaults.standard.string(forKey: AppConfig.Keys.commandSuffix) ?? "") : ""
         
         // Template replacement
         prefix = prefix

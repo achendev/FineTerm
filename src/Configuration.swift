@@ -10,6 +10,7 @@ struct AppConfig {
         static let commandPrefix = "commandPrefix"
         static let commandSuffix = "commandSuffix"
         static let changeTerminalName = "changeTerminalName"
+        static let terminalTabNameCommand = "terminalTabNameCommand"
         
         static let hideCommandInList = "hideCommandInList"
         static let smartFilter = "smartFilter"
@@ -54,6 +55,7 @@ struct AppConfig {
         Keys.commandPrefix: "unset HISTFILE ; clear ; ",
         Keys.commandSuffix: " && exit",
         Keys.changeTerminalName: true,
+        Keys.terminalTabNameCommand: "( ( sleep 2 ; printf '\\e]1;%s\\a' '$PROFILE_NAME' ) 2>/dev/null & ) 2>/dev/null ; clear ; ",
         
         Keys.hideCommandInList: true,
         Keys.smartFilter: true,

@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage(AppConfig.Keys.commandPrefix) private var commandPrefix = ""
     @AppStorage(AppConfig.Keys.commandSuffix) private var commandSuffix = ""
     @AppStorage(AppConfig.Keys.changeTerminalName) private var changeTerminalName = true
+    @AppStorage(AppConfig.Keys.terminalTabNameCommand) private var terminalTabNameCommand = "( ( sleep 2 ; printf '\\e]1;%s\\a' '$PROFILE_NAME' ) 2>/dev/null & ) 2>/dev/null ; clear ; "
     
     @AppStorage(AppConfig.Keys.hideCommandInList) private var hideCommandInList = true
     @AppStorage(AppConfig.Keys.smartFilter) private var smartFilter = true
@@ -338,6 +339,16 @@ struct SettingsView: View {
                         }
                         
                         Toggle("Set Terminal Tab Name", isOn: $changeTerminalName)
+                        
+                        if changeTerminalName {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Tab Name Command:")
+                                    .font(.caption)
+                                TextField("e.g. printf '\\e]1;%s\\a' '$PROFILE_NAME'", text: $terminalTabNameCommand)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                            }
+                            .padding(.leading, 20)
+                        }
                     }
                     
                     Divider()

@@ -251,6 +251,49 @@ class ClipboardStore: ObservableObject {
         save()
     }
     
+    func removeDuplicates() {
+        let historySnapshot = self.history
+        let blobsSnapshot = self.blobs
+        
+        processingQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            var seenContent = Set<String>()
+            var idsToRemove: Set<UUID> = []
+            
+            for item in historySnapshot {
+                let identifier: String
+                if item.type == .text {
+                    identifier = blobsSnapshot[item.id] ?? item.content
+                } else {
+                    if let base64 = blobsSnapshot[item.id] {
+                        identifier = base64
+                    } else if let thumb = item.thumbnailData {
+                        identifier = thumb.base64EncodedString()
+                    } else {
+                        identifier = UUID().uuidString
+                    }
+                }
+                
+                if seenContent.contains(identifier) {
+                    idsToRemove.insert(item.id)
+                } else {
+                    seenContent.insert(identifier)
+                }
+            }
+            
+            if !idsToRemove.isEmpty {
+                DispatchQueue.main.async {
+                    self.history.removeAll { idsToRemove.contains($0.id) }
+                    for id in idsToRemove {
+                        self.blobs.removeValue(forKey: id)
+                    }
+                    self.save()
+                }
+            }
+        }
+    }
+    
     func copyToClipboard(item: ClipboardItem) {
         let pb = NSPasteboard.general
         pb.clearContents()

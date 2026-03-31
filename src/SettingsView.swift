@@ -294,10 +294,17 @@ struct SettingsView: View {
                                     .padding(.vertical, 4)
                                 }
                                 
-                                Button("Clear History") {
-                                    NSApp.sendAction(#selector(AppDelegate.clearClipboardHistory), to: nil, from: nil)
+                                HStack(spacing: 12) {
+                                    Button("Clear History") {
+                                        NSApp.sendAction(#selector(AppDelegate.clearClipboardHistory), to: nil, from: nil)
+                                    }
+                                    .controlSize(.small)
+                                    
+                                    Button("Remove Duplicates") {
+                                        clipboardStore.removeDuplicates()
+                                    }
+                                    .controlSize(.small)
                                 }
-                                .controlSize(.small)
                             }
                             .padding(.leading, 10)
                         }

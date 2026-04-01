@@ -48,7 +48,7 @@ class SettingsWindowManager: NSObject, NSWindowDelegate {
         }
         
         let newWindow = SettingsWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 650),
+            contentRect: NSRect(x: 0, y: 0, width: 450, height: 500),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false

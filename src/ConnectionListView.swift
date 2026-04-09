@@ -12,6 +12,7 @@ struct ConnectionListView: View {
     @State var newGroupID: UUID? = nil
     @State var newUsePrefix = true
     @State var newUseSuffix = true
+    @State var newSetTabName = true
     
     // Group Creation Inputs
     @State var isCreatingGroup = false
@@ -79,6 +80,7 @@ struct ConnectionListView: View {
                 groupID: $newGroupID,
                 usePrefix: $newUsePrefix,
                 useSuffix: $newUseSuffix,
+                setTabName: $newSetTabName,
                 groups: store.groups,
                 onSave: saveSelected,
                 onDelete: deleteSelected,

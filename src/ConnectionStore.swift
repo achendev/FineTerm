@@ -13,18 +13,19 @@ class ConnectionStore: ObservableObject {
     }
     
     // --- Connection Logic ---
-    func add(name: String, command: String, groupID: UUID? = nil, usePrefix: Bool = true, useSuffix: Bool = true) {
-        connections.append(Connection(groupID: groupID, name: name, command: command, usePrefix: usePrefix, useSuffix: useSuffix))
+    func add(name: String, command: String, groupID: UUID? = nil, usePrefix: Bool = true, useSuffix: Bool = true, setTabName: Bool = true) {
+        connections.append(Connection(groupID: groupID, name: name, command: command, usePrefix: usePrefix, useSuffix: useSuffix, setTabName: setTabName))
         save()
     }
     
-    func update(id: UUID, name: String, command: String, groupID: UUID?, usePrefix: Bool, useSuffix: Bool) {
+    func update(id: UUID, name: String, command: String, groupID: UUID?, usePrefix: Bool, useSuffix: Bool, setTabName: Bool) {
         if let index = connections.firstIndex(where: { $0.id == id }) {
             connections[index].name = name
             connections[index].command = command
             connections[index].groupID = groupID
             connections[index].usePrefix = usePrefix
             connections[index].useSuffix = useSuffix
+            connections[index].setTabName = setTabName
             save()
         }
     }
@@ -120,7 +121,8 @@ class ConnectionStore: ObservableObject {
                 command: conn.command,
                 group: groupName,
                 usePrefix: conn.usePrefix,
-                useSuffix: conn.useSuffix
+                useSuffix: conn.useSuffix,
+                setTabName: conn.setTabName
             )
         }
         
@@ -157,6 +159,7 @@ class ConnectionStore: ObservableObject {
                 self.connections[index].groupID = gID
                 self.connections[index].usePrefix = c.usePrefix ?? true
                 self.connections[index].useSuffix = c.useSuffix ?? true
+                self.connections[index].setTabName = c.setTabName ?? true
             } else {
                 // Append new connection
                 self.connections.append(Connection(
@@ -164,7 +167,8 @@ class ConnectionStore: ObservableObject {
                     name: c.name,
                     command: c.command,
                     usePrefix: c.usePrefix ?? true,
-                    useSuffix: c.useSuffix ?? true
+                    useSuffix: c.useSuffix ?? true,
+                    setTabName: c.setTabName ?? true
                 ))
             }
         }

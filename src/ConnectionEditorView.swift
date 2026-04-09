@@ -7,6 +7,7 @@ struct ConnectionEditorView: View {
     @Binding var groupID: UUID?
     @Binding var usePrefix: Bool
     @Binding var useSuffix: Bool
+    @Binding var setTabName: Bool
     
     var groups: [ConnectionGroup]
     
@@ -48,23 +49,30 @@ struct ConnectionEditorView: View {
             }
             .padding(.top, 4)
 
-            // Options: Prefix / Suffix
-            HStack(spacing: 20) {
-                Toggle(isOn: $usePrefix) {
-                    Text("Use Prefix").font(.caption)
+            // Options: Prefix / Suffix / Tab Name
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 20) {
+                    Toggle(isOn: $usePrefix) {
+                        Text("Use Prefix").font(.caption)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .fixedSize()
+                    
+                    Toggle(isOn: $useSuffix) {
+                        Text("Use Suffix").font(.caption)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .fixedSize()
+                }
+                
+                Toggle(isOn: $setTabName) {
+                    Text("Set Tab Name").font(.caption)
                 }
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .fixedSize()
-                
-                Toggle(isOn: $useSuffix) {
-                    Text("Use Suffix").font(.caption)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .fixedSize()
-                
-                Spacer()
             }
             .padding(.top, 4)
             

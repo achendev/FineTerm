@@ -386,7 +386,7 @@ struct TerminalSettingsTab: View {
                 Divider()
                 
                 VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Set Terminal Tab Name", isOn: $changeTerminalName)
+                    Toggle("Set Terminal Tab Name Globally", isOn: $changeTerminalName)
                     
                     if changeTerminalName {
                         VStack(alignment: .leading, spacing: 4) {

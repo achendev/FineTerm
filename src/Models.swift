@@ -22,22 +22,24 @@ struct Connection: Identifiable, Codable {
     var command: String
     var usePrefix: Bool
     var useSuffix: Bool
+    var setTabName: Bool
     var lastUsed: Date? // Timestamp for sorting
     
     // Init for new items
-    init(groupID: UUID? = nil, name: String, command: String, usePrefix: Bool = true, useSuffix: Bool = true, lastUsed: Date? = nil) {
+    init(groupID: UUID? = nil, name: String, command: String, usePrefix: Bool = true, useSuffix: Bool = true, setTabName: Bool = true, lastUsed: Date? = nil) {
         self.id = UUID()
         self.groupID = groupID
         self.name = name
         self.command = command
         self.usePrefix = usePrefix
         self.useSuffix = useSuffix
+        self.setTabName = setTabName
         self.lastUsed = lastUsed
     }
     
     // Custom decoding to handle legacy JSON
     enum CodingKeys: String, CodingKey {
-        case id, groupID, name, command, usePrefix, useSuffix, lastUsed
+        case id, groupID, name, command, usePrefix, useSuffix, setTabName, lastUsed
     }
     
     init(from decoder: Decoder) throws {
@@ -49,6 +51,7 @@ struct Connection: Identifiable, Codable {
         // Default to true if keys are missing
         usePrefix = try container.decodeIfPresent(Bool.self, forKey: .usePrefix) ?? true
         useSuffix = try container.decodeIfPresent(Bool.self, forKey: .useSuffix) ?? true
+        setTabName = try container.decodeIfPresent(Bool.self, forKey: .setTabName) ?? true
         // Optional date
         lastUsed = try container.decodeIfPresent(Date.self, forKey: .lastUsed)
     }
@@ -61,6 +64,7 @@ struct Connection: Identifiable, Codable {
         try container.encode(command, forKey: .command)
         try container.encode(usePrefix, forKey: .usePrefix)
         try container.encode(useSuffix, forKey: .useSuffix)
+        try container.encode(setTabName, forKey: .setTabName)
         try container.encode(lastUsed, forKey: .lastUsed)
     }
 }
@@ -119,6 +123,7 @@ struct ExportConnection: Codable {
     var group: String? // Optional Group Name
     var usePrefix: Bool? // Optional, default true
     var useSuffix: Bool? // Optional, default true
+    var setTabName: Bool? // Optional, default true
 }
 
 struct ExportData: Codable {

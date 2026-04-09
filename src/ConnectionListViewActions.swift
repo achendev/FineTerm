@@ -63,6 +63,7 @@ extension ConnectionListView {
             newGroupID = conn.groupID
             newUsePrefix = conn.usePrefix
             newUseSuffix = conn.useSuffix
+            newSetTabName = conn.setTabName
             highlightedConnectionID = conn.id
         }
         lastClickTime = now
@@ -76,7 +77,7 @@ extension ConnectionListView {
         
         // Background terminal name setting
         var terminalNamePrefix = ""
-        if changeTerminalName {
+        if changeTerminalName && conn.setTabName {
             let template = UserDefaults.standard.string(forKey: AppConfig.Keys.terminalTabNameCommand) ?? "( ( sleep 2 ; printf '\\e]1;%s\\a' '$PROFILE_NAME' ) 2>/dev/null & ) 2>/dev/null ; clear ; "
             terminalNamePrefix = template.replacingOccurrences(of: "$PROFILE_NAME", with: conn.name)
                                          .replacingOccurrences(of: "$PROFILE_COMMAND", with: conn.command)
@@ -104,7 +105,7 @@ extension ConnectionListView {
             // Validation: Do not save if fields are empty
             if newName.isEmpty || newCommand.isEmpty { return }
             
-            store.update(id: id, name: newName, command: newCommand, groupID: newGroupID, usePrefix: newUsePrefix, useSuffix: newUseSuffix)
+            store.update(id: id, name: newName, command: newCommand, groupID: newGroupID, usePrefix: newUsePrefix, useSuffix: newUseSuffix, setTabName: newSetTabName)
             resetForm()
         }
     }
@@ -118,7 +119,7 @@ extension ConnectionListView {
     
     func addNew() {
         if !newName.isEmpty && !newCommand.isEmpty {
-            store.add(name: newName, command: newCommand, groupID: newGroupID, usePrefix: newUsePrefix, useSuffix: newUseSuffix)
+            store.add(name: newName, command: newCommand, groupID: newGroupID, usePrefix: newUsePrefix, useSuffix: newUseSuffix, setTabName: newSetTabName)
             resetForm()
         }
     }
@@ -129,6 +130,7 @@ extension ConnectionListView {
         newGroupID = nil
         newUsePrefix = true
         newUseSuffix = true
+        newSetTabName = true
         selectedConnectionID = nil
         lastClickedID = nil
     }

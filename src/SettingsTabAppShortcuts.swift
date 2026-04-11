@@ -132,6 +132,10 @@ struct GroupNavRow: View {
 struct ShortcutRowView: View {
     @Binding var shortcut: CustomAppShortcut
     let availableApps: [EditorApp]
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onMoveUp: () -> Void
+    let onMoveDown: () -> Void
     let onDelete: () -> Void
     
     var body: some View {
@@ -197,7 +201,25 @@ struct ShortcutRowView: View {
                 Spacer()
                 
                 VStack(alignment: .trailing, spacing: 8) {
-                    HStack {
+                    HStack(spacing: 12) {
+                        HStack(spacing: 4) {
+                            Button(action: onMoveUp) {
+                                Image(systemName: "chevron.up")
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(!canMoveUp)
+                            .opacity(canMoveUp ? 1.0 : 0.3)
+                            .help("Move group up")
+                            
+                            Button(action: onMoveDown) {
+                                Image(systemName: "chevron.down")
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(!canMoveDown)
+                            .opacity(canMoveDown ? 1.0 : 0.3)
+                            .help("Move group down")
+                        }
+                        
                         Button(action: { shortcut.bundleIDs.append("") }) {
                             Image(systemName: "plus.app").foregroundColor(.accentColor)
                         }
@@ -290,18 +312,33 @@ struct AppShortcutsSettingsTab: View {
                 
                 VStack(spacing: 16) {
                     ForEach($shortcuts) { $shortcut in
+                        let index = shortcuts.firstIndex(where: { $0.id == shortcut.id }) ?? 0
                         ShortcutRowView(
                             shortcut: $shortcut,
                             availableApps: appListService.availableApps,
+                            canMoveUp: index > 0,
+                            canMoveDown: index < shortcuts.count - 1,
+                            onMoveUp: {
+                                if index > 0 {
+                                    withAnimation { shortcuts.swapAt(index, index - 1) }
+                                }
+                            },
+                            onMoveDown: {
+                                if index < shortcuts.count - 1 {
+                                    withAnimation { shortcuts.swapAt(index, index + 1) }
+                                }
+                            },
                             onDelete: {
-                                shortcuts.removeAll { $0.id == shortcut.id }
+                                withAnimation { shortcuts.removeAll { $0.id == shortcut.id } }
                             }
                         )
                     }
                 }
                 
                 Button(action: {
-                    shortcuts.append(CustomAppShortcut(triggers: [ShortcutTrigger(key: "", modifier: "command")], bundleIDs: [""]))
+                    withAnimation {
+                        shortcuts.append(CustomAppShortcut(triggers: [ShortcutTrigger(key: "", modifier: "command")], bundleIDs: [""]))
+                    }
                 }) {
                     HStack {
                         Image(systemName: "plus.circle")

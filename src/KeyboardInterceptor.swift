@@ -141,10 +141,21 @@ struct CycleWindow {
 
 // Stable Round-Robin Cycling Engine
 func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApplication?) {
+    let frontID = frontApp?.bundleIdentifier ?? ""
+    let isDebug = UserDefaults.standard.bool(forKey: AppConfig.Keys.debugMode)
+    
+    // 1. If we are coming from OUTSIDE this shortcut group, let macOS restore the most recent app naturally
+    if !validBundleIDs.contains(frontID) {
+        let targetAppID = AppFocusTracker.shared.getMostRecent(from: validBundleIDs) ?? validBundleIDs[0]
+        if isDebug { print("DEBUG: Switching from outside to most recent in group: \(targetAppID)") }
+        activateApp(bundleID: targetAppID)
+        return
+    }
+    
     var cycleWindows: [CycleWindow] = []
     let workspace = NSWorkspace.shared
     
-    // 1. Gather all standard windows for all target apps
+    // 2. Gather all standard windows for all target apps (INSIDE group)
     for (index, bundleID) in validBundleIDs.enumerated() {
         let apps = workspace.runningApplications.filter { $0.bundleIdentifier == bundleID }
         for app in apps {
@@ -216,15 +227,18 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         }
     }
     
-    // 2. Fallback if no windows exist (app is closed or completely hidden)
+    // 3. Fallback if no windows exist (app is completely hidden/closed)
     if cycleWindows.isEmpty {
-        if let firstID = validBundleIDs.first {
-            activateApp(bundleID: firstID)
+        if let currentIndex = validBundleIDs.firstIndex(of: frontID) {
+            let nextAppIndex = (currentIndex + 1) % validBundleIDs.count
+            activateApp(bundleID: validBundleIDs[nextAppIndex])
+        } else {
+            if let firstID = validBundleIDs.first { activateApp(bundleID: firstID) }
         }
         return
     }
     
-    // 3. Stable Sort: App Order -> Title -> X Position -> Y Position
+    // 4. Stable Sort: App Order -> Title -> X Position -> Y Position
     // This creates an immutable array order (e.g. [VSCode_Window1, Sublime_Window1, Sublime_Window2])
     cycleWindows.sort { a, b in
         if a.appIndex != b.appIndex { return a.appIndex < b.appIndex }
@@ -233,23 +247,26 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         return a.frame.origin.y < b.frame.origin.y
     }
     
-    // 4. Find the currently focused window in our stable list
+    // 5. Find the currently focused window in our stable list
     var targetIndex = 0
     if let currentIndex = cycleWindows.firstIndex(where: { $0.isFocused }) {
         // Round Robin: Take the next window, loop back to 0 if at the end
         targetIndex = (currentIndex + 1) % cycleWindows.count
-    } else if let frontID = frontApp?.bundleIdentifier, let frontAppIndex = validBundleIDs.firstIndex(of: frontID) {
+    } else if let frontAppIndex = validBundleIDs.firstIndex(of: frontID) {
         // App is frontmost, but no specific window is focused (e.g., system dialog active)
         // Jump to the next app in the group
         let nextAppIndex = (frontAppIndex + 1) % validBundleIDs.count
         if let firstForNextApp = cycleWindows.firstIndex(where: { $0.appIndex == nextAppIndex }) {
             targetIndex = firstForNextApp
+        } else {
+             activateApp(bundleID: validBundleIDs[nextAppIndex])
+             return
         }
     }
     
     let target = cycleWindows[targetIndex]
     
-    // 5. Aggressive OS Targeting
+    // 6. Aggressive OS Targeting
     // Just activating the app isn't enough; we force the OS to raise the specific AXUIElement
     target.app.activate(options: .activateIgnoringOtherApps)
     

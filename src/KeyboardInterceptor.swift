@@ -5,6 +5,7 @@ private var globalKeyboardEventTap: CFMachPort?
 
 // State for the Origin Loop (Origin -> FineTerm -> Terminal -> Origin)
 private var savedOriginBundleID: String?
+private var lastUsedShortcutID: UUID?
 
 // Cache for Custom Shortcuts to prevent JSON decoding on every keystroke
 private var cachedCustomShortcuts: [CustomAppShortcut] = []
@@ -50,7 +51,6 @@ class KeyboardInterceptor {
             refreshCustomShortcutsCache()
         }
         
-        // Listen to BOTH keyDown and flagsChanged (to support pure modifier shortcuts like Ctrl+Shift)
         let eventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -85,10 +85,11 @@ class KeyboardInterceptor {
         eventTap = nil
         runLoopSource = nil
         savedOriginBundleID = nil
+        lastUsedShortcutID = nil
     }
 }
 
-// Strict Modifier matching for up to 2 modifiers (including Shift and Caps Lock)
+// Strict Modifier matching for up to 2 modifiers
 func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
     var needsCmd = false
     var needsCtrl = false
@@ -104,7 +105,6 @@ func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
             case "option": needsOpt = true
             case "shift": needsShift = true
             case "capslock": needsCapsLock = true
-            // esc and tab are keys, not modifier flags, so ignore them here
             default: break
         }
     }
@@ -114,18 +114,27 @@ func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
     let hasOpt = flags.contains(.maskAlternate)
     let hasShift = flags.contains(.maskShift)
     
-    // Core Modifiers MUST match perfectly
     if hasCmd != needsCmd || hasCtrl != needsCtrl || hasOpt != needsOpt || hasShift != needsShift {
         return false
     }
     
-    // Only check CapsLock if they explicitly requested it as a modifier. 
-    // Otherwise, allow shortcuts to work regardless of Caps Lock state.
     if needsCapsLock {
         return flags.contains(.maskAlphaShift)
     }
-    
     return true
+}
+
+func isGlobalShortcutMatch(type: CGEventType, eventKeyCode: Int64, flags: CGEventFlags, keyStr: String, mod1Str: String, mod2Str: String?) -> Bool {
+    if keyStr.isEmpty {
+        let m1 = mod1Str
+        let m2 = mod2Str ?? "none"
+        if m1 == "none" || m2 == "none" { return false } // Block single-modifier pure shortcuts
+        return type == .flagsChanged && isModifierMatch(flags: flags, mod1: m1, mod2: m2)
+    } else {
+        if type != .keyDown { return false }
+        guard let code = KeyboardInterceptor.getKeyCode(for: keyStr) else { return false }
+        return eventKeyCode == Int64(code) && isModifierMatch(flags: flags, mod1: mod1Str, mod2: mod2Str)
+    }
 }
 
 // Helpers for Activation
@@ -166,7 +175,6 @@ func activateTerminal() {
     }
 }
 
-// Struct to hold stable window properties for sorting
 struct CycleWindow {
     let app: NSRunningApplication
     let axWindow: AXUIElement
@@ -181,7 +189,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
     let frontID = frontApp?.bundleIdentifier ?? ""
     let isDebug = UserDefaults.standard.bool(forKey: AppConfig.Keys.debugMode)
     
-    // 1. If we are coming from OUTSIDE this shortcut group, let macOS restore the most recent app naturally
     if !validBundleIDs.contains(frontID) {
         let targetAppID = AppFocusTracker.shared.getMostRecent(from: validBundleIDs) ?? validBundleIDs[0]
         if isDebug { print("DEBUG: Switching from outside to most recent in group: \(targetAppID)") }
@@ -192,7 +199,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
     var cycleWindows: [CycleWindow] = []
     let workspace = NSWorkspace.shared
     
-    // 2. Gather all standard windows for all target apps (INSIDE group)
     for (index, bundleID) in validBundleIDs.enumerated() {
         let apps = workspace.runningApplications.filter { $0.bundleIdentifier == bundleID }
         for app in apps {
@@ -205,10 +211,9 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
                 
                 var focusedWindowRef: CFTypeRef?
                 AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &focusedWindowRef)
-                let focusedWindow = focusedWindowRef as! AXUIElement? // Can be nil
+                let focusedWindow = focusedWindowRef as! AXUIElement?
                 
                 for window in windows {
-                    // Filter Standard Windows
                     var roleRef: CFTypeRef?
                     AXUIElementCopyAttributeValue(window, kAXRoleAttribute as CFString, &roleRef)
                     if (roleRef as? String) != kAXWindowRole { continue }
@@ -222,7 +227,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
                     if AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minRef) == .success,
                        let isMin = minRef as? NSNumber, isMin.boolValue { continue }
                        
-                    // Get Position and Size to filter out 0x0 ghosts
                     var posRef: CFTypeRef?
                     var sizeRef: CFTypeRef?
                     var frame: CGRect = .zero
@@ -242,12 +246,10 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
                         continue
                     }
                     
-                    // Get Title for secondary stable sorting
                     var titleRef: CFTypeRef?
                     AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
                     let title = titleRef as? String ?? ""
                     
-                    // Electron apps sometimes fail `kAXFocusedWindowAttribute`. Fallback to `kAXMainAttribute`
                     var isMain = false
                     var mainRef: CFTypeRef?
                     if AXUIElementCopyAttributeValue(window, kAXMainAttribute as CFString, &mainRef) == .success,
@@ -264,7 +266,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         }
     }
     
-    // 3. Fallback if no windows exist (app is completely hidden/closed)
     if cycleWindows.isEmpty {
         if let currentIndex = validBundleIDs.firstIndex(of: frontID) {
             let nextAppIndex = (currentIndex + 1) % validBundleIDs.count
@@ -275,8 +276,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         return
     }
     
-    // 4. Stable Sort: App Order -> Title -> X Position -> Y Position
-    // This creates an immutable array order (e.g.[VSCode_Window1, Sublime_Window1, Sublime_Window2])
     cycleWindows.sort { a, b in
         if a.appIndex != b.appIndex { return a.appIndex < b.appIndex }
         if a.title != b.title { return a.title < b.title }
@@ -284,14 +283,10 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         return a.frame.origin.y < b.frame.origin.y
     }
     
-    // 5. Find the currently focused window in our stable list
     var targetIndex = 0
     if let currentIndex = cycleWindows.firstIndex(where: { $0.isFocused }) {
-        // Round Robin: Take the next window, loop back to 0 if at the end
         targetIndex = (currentIndex + 1) % cycleWindows.count
     } else if let frontAppIndex = validBundleIDs.firstIndex(of: frontID) {
-        // App is frontmost, but no specific window is focused (e.g., system dialog active)
-        // Jump to the next app in the group
         let nextAppIndex = (frontAppIndex + 1) % validBundleIDs.count
         if let firstForNextApp = cycleWindows.firstIndex(where: { $0.appIndex == nextAppIndex }) {
             targetIndex = firstForNextApp
@@ -303,20 +298,15 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
     
     let target = cycleWindows[targetIndex]
     
-    // 6. Aggressive OS Targeting
-    // Just activating the app isn't enough; we force the OS to raise the specific AXUIElement
     target.app.activate(options: .activateIgnoringOtherApps)
-    
     let axApp = AXUIElementCreateApplication(target.app.processIdentifier)
     AXUIElementSetAttributeValue(axApp, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-    
     AXUIElementSetAttributeValue(target.axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
     AXUIElementSetAttributeValue(target.axWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
     AXUIElementPerformAction(target.axWindow, kAXRaiseAction as CFString)
     AXUIElementSetAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, target.axWindow)
 }
 
-// Robust Helper to find the REAL frontmost app, bypassing NSWorkspace lag
 func getRealFrontmostApp() -> NSRunningApplication? {
     let workspace = NSWorkspace.shared
     let workspaceApp = workspace.frontmostApplication
@@ -357,94 +347,98 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     let keyCode = type == .keyDown ? event.getIntegerValueField(.keyboardEventKeycode) : -1
     let defaults = UserDefaults.standard
     
-    var matchedCustomShortcut: CustomAppShortcut?
+    let frontApp = getRealFrontmostApp()
     
-    // --- STAGE 1: LIGHTNING FAST PRE-MATCHING ---
+    // --- PRE-MATCHING GROUP NAVIGATION SHORTCUTS ---
+    let isNextMatch = defaults.bool(forKey: AppConfig.Keys.enableNextGroupShortcut) &&
+        isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
+                              keyStr: defaults.string(forKey: AppConfig.Keys.nextGroupKey) ?? ".",
+                              mod1Str: defaults.string(forKey: AppConfig.Keys.nextGroupModifier) ?? "control",
+                              mod2Str: defaults.string(forKey: AppConfig.Keys.nextGroupModifier2) ?? "shift")
+                              
+    let isPrevMatch = defaults.bool(forKey: AppConfig.Keys.enablePrevGroupShortcut) &&
+        isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
+                              keyStr: defaults.string(forKey: AppConfig.Keys.prevGroupKey) ?? ",",
+                              mod1Str: defaults.string(forKey: AppConfig.Keys.prevGroupModifier) ?? "control",
+                              mod2Str: defaults.string(forKey: AppConfig.Keys.prevGroupModifier2) ?? "shift")
+
+    let isToggleGroupMatch = defaults.bool(forKey: AppConfig.Keys.enableToggleGroupShortcut) &&
+        isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
+                              keyStr: defaults.string(forKey: AppConfig.Keys.toggleGroupKey) ?? "/",
+                              mod1Str: defaults.string(forKey: AppConfig.Keys.toggleGroupModifier) ?? "control",
+                              mod2Str: defaults.string(forKey: AppConfig.Keys.toggleGroupModifier2) ?? "shift")
+                              
+    if isNextMatch || isPrevMatch || isToggleGroupMatch {
+        let enabledShortcuts = cachedCustomShortcuts.filter { $0.isEnabled && !$0.bundleIDs.filter({!$0.isEmpty}).isEmpty }
+        if !enabledShortcuts.isEmpty {
+            var target: CustomAppShortcut?
+            
+            if isNextMatch {
+                let idx = enabledShortcuts.firstIndex(where: { $0.id == lastUsedShortcutID }) ?? -1
+                let nextIdx = (idx + 1) % enabledShortcuts.count
+                target = enabledShortcuts[nextIdx]
+            } else if isPrevMatch {
+                let idx = enabledShortcuts.firstIndex(where: { $0.id == lastUsedShortcutID }) ?? 1
+                let prevIdx = (idx - 1 + enabledShortcuts.count) % enabledShortcuts.count
+                target = enabledShortcuts[prevIdx]
+            } else if isToggleGroupMatch {
+                target = enabledShortcuts.first(where: { $0.id == lastUsedShortcutID }) ?? enabledShortcuts[0]
+            }
+            
+            if let t = target {
+                lastUsedShortcutID = t.id
+                DispatchQueue.main.async { executeCustomShortcutCycle(validBundleIDs: t.bundleIDs.filter({!$0.isEmpty}), frontApp: frontApp) }
+            }
+        }
+        return type == .keyDown ? nil : Unmanaged.passUnretained(event)
+    }
+    
+    // --- STAGE 1: LIGHTNING FAST PRE-MATCHING FOR CUSTOM APPS ---
+    var matchedCustomShortcut: CustomAppShortcut?
     for shortcut in cachedCustomShortcuts {
+        if !shortcut.isEnabled { continue }
         let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
         if validBundleIDs.isEmpty { continue }
         
-        var expectedCode: CGKeyCode? = nil
-        var isModifierOnly = false
-        
-        if !shortcut.key.isEmpty {
-            expectedCode = KeyboardInterceptor.getKeyCode(for: shortcut.key)
-        } else if shortcut.modifier2 == "esc" {
-            expectedCode = 53
-        } else if shortcut.modifier2 == "tab" {
-            expectedCode = 48
-        } else {
-            // Key is empty and modifier2 is just another modifier flag (like Ctrl+Shift)
-            isModifierOnly = true
-        }
-        
-        if type == .keyDown && !isModifierOnly {
-            if let code = expectedCode,
-               keyCode == Int64(code),
-               isModifierMatch(flags: flags, mod1: shortcut.modifier, mod2: shortcut.modifier2) {
-                matchedCustomShortcut = shortcut
-                break
-            }
-        } else if type == .flagsChanged && isModifierOnly {
-            // Prevent single-modifier shortcuts (e.g. just pressing "Cmd")
-            // Must have at least TWO defined modifiers to trigger a flagsChanged event cycle
-            let mod1 = shortcut.modifier
-            let mod2 = shortcut.modifier2 ?? "none"
-            
-            if mod1 != "none" && mod2 != "none" {
-                if isModifierMatch(flags: flags, mod1: mod1, mod2: mod2) {
-                    matchedCustomShortcut = shortcut
-                    break
-                }
-            }
+        if isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags, keyStr: shortcut.key, mod1Str: shortcut.modifier, mod2Str: shortcut.modifier2) {
+            matchedCustomShortcut = shortcut
+            break
         }
     }
     
-    // Check built-in keydown shortcuts (only evaluate on actual keydowns, ignore flagsChanged)
-    var isMainMatch = false
-    var isToggleMatch = false
-    var isClipMatch = false
+    // --- STAGE 1B: SYSTEM BUILT-IN SHORTCUTS ---
+    let isMainMatch = isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
+                                            keyStr: defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n",
+                                            mod1Str: defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command",
+                                            mod2Str: nil)
+                                            
+    let isToggleMatch = defaults.bool(forKey: AppConfig.Keys.enableTerminalToggleShortcut) &&
+                        isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
+                                            keyStr: defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutKey) ?? "h",
+                                            mod1Str: defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutModifier) ?? "command",
+                                            mod2Str: nil)
+                                            
+    let isClipMatch = defaults.bool(forKey: AppConfig.Keys.enableClipboardManager) &&
+                      isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
+                                            keyStr: defaults.string(forKey: AppConfig.Keys.clipboardShortcutKey) ?? "u",
+                                            mod1Str: defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command",
+                                            mod2Str: nil)
     
-    if type == .keyDown {
-        let mainKey = defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n"
-        let mainMod = defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command"
-        let mainCode = KeyboardInterceptor.getKeyCode(for: mainKey)
-        isMainMatch = (mainCode != nil && keyCode == Int64(mainCode!)) && isModifierMatch(flags: flags, mod1: mainMod, mod2: nil)
-        
-        let toggleKey = defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutKey) ?? "h"
-        let toggleMod = defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutModifier) ?? "command"
-        let toggleCode = KeyboardInterceptor.getKeyCode(for: toggleKey)
-        isToggleMatch = defaults.bool(forKey: AppConfig.Keys.enableTerminalToggleShortcut) && (toggleCode != nil && keyCode == Int64(toggleCode!)) && isModifierMatch(flags: flags, mod1: toggleMod, mod2: nil)
-        
-        let clipKey = defaults.string(forKey: AppConfig.Keys.clipboardShortcutKey) ?? "u"
-        let clipMod = defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command"
-        let clipCode = KeyboardInterceptor.getKeyCode(for: clipKey)
-        isClipMatch = defaults.bool(forKey: AppConfig.Keys.enableClipboardManager) && (clipCode != nil && keyCode == Int64(clipCode!)) && isModifierMatch(flags: flags, mod1: clipMod, mod2: nil)
-    }
-    
-    // EARLY EXIT: If this keypress doesn't match any of our configured shortcuts, let it pass instantly.
     if matchedCustomShortcut == nil && !isMainMatch && !isToggleMatch && !isClipMatch {
         return Unmanaged.passUnretained(event)
     }
     
-    // --- STAGE 2: MATCH CONFIRMED, FETCH SYSTEM STATE ---
-    let frontApp = getRealFrontmostApp()
+    // --- STAGE 2: EXECUTE ---
     
-    // Execute Custom App Shortcut
     if let shortcut = matchedCustomShortcut {
+        lastUsedShortcutID = shortcut.id
         let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
-        
-        // Dispatch to main thread immediately because AXUIElement APIs require a RunLoop context to process reliably
         DispatchQueue.main.async {
             executeCustomShortcutCycle(validBundleIDs: validBundleIDs, frontApp: frontApp)
         }
-        
-        // DANGEROUS: Do not swallow .flagsChanged events or modifiers will get "stuck" in the OS.
-        // It's perfectly safe to swallow .keyDown though.
         return type == .keyDown ? nil : Unmanaged.passUnretained(event)
     }
     
-    // Execute Main Shortcut Loop
     let target = defaults.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
     let isTerminalFront = frontApp?.bundleIdentifier == target
     let isFineTermFront = NSRunningApplication.current.isActive
@@ -479,14 +473,13 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         }
     }
     
-    // Execute Terminal Toggle
     if isToggleMatch {
         if isTerminalFront {
             if let originID = savedOriginBundleID, originID != target, originID != Bundle.main.bundleIdentifier {
                 DispatchQueue.main.async { activateApp(bundleID: originID) }
                 return nil
             }
-            return Unmanaged.passUnretained(event) // Fallback to native Cmd+H
+            return Unmanaged.passUnretained(event)
         } else {
             if !isFineTermFront, let app = frontApp, let bundleID = app.bundleIdentifier, bundleID != target, bundleID != Bundle.main.bundleIdentifier {
                 savedOriginBundleID = bundleID
@@ -496,7 +489,6 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         }
     }
     
-    // Execute Clipboard Toggle
     if isClipMatch {
         DispatchQueue.main.async {
             if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.toggleClipboardWindow() }

@@ -15,17 +15,19 @@ struct CustomAppShortcut: Identifiable, Codable, Equatable {
     var modifier: String
     var modifier2: String?
     var bundleIDs: [String]
+    var isEnabled: Bool = true
     
-    init(id: UUID = UUID(), key: String, modifier: String, modifier2: String? = nil, bundleIDs: [String]) {
+    init(id: UUID = UUID(), key: String, modifier: String, modifier2: String? = nil, bundleIDs: [String], isEnabled: Bool = true) {
         self.id = id
         self.key = key
         self.modifier = modifier
         self.modifier2 = modifier2
         self.bundleIDs = bundleIDs
+        self.isEnabled = isEnabled
     }
     
     enum CodingKeys: String, CodingKey {
-        case id, key, modifier, modifier2, bundleIDs, bundleID
+        case id, key, modifier, modifier2, bundleIDs, bundleID, isEnabled
     }
     
     init(from decoder: Decoder) throws {
@@ -34,6 +36,7 @@ struct CustomAppShortcut: Identifiable, Codable, Equatable {
         key = try container.decode(String.self, forKey: .key)
         modifier = try container.decode(String.self, forKey: .modifier)
         modifier2 = try container.decodeIfPresent(String.self, forKey: .modifier2)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         
         // Backward compatibility: Handle both new array format and old single string format
         if let ids = try? container.decode([String].self, forKey: .bundleIDs) {
@@ -52,6 +55,7 @@ struct CustomAppShortcut: Identifiable, Codable, Equatable {
         try container.encode(modifier, forKey: .modifier)
         try container.encodeIfPresent(modifier2, forKey: .modifier2)
         try container.encode(bundleIDs, forKey: .bundleIDs)
+        try container.encode(isEnabled, forKey: .isEnabled)
     }
 }
 
@@ -71,7 +75,6 @@ struct Connection: Identifiable, Codable {
     var setTabName: Bool
     var lastUsed: Date? // Timestamp for sorting
     
-    // Init for new items
     init(groupID: UUID? = nil, name: String, command: String, usePrefix: Bool = true, useSuffix: Bool = true, setTabName: Bool = true, lastUsed: Date? = nil) {
         self.id = UUID()
         self.groupID = groupID
@@ -83,7 +86,6 @@ struct Connection: Identifiable, Codable {
         self.lastUsed = lastUsed
     }
     
-    // Custom decoding to handle legacy JSON
     enum CodingKeys: String, CodingKey {
         case id, groupID, name, command, usePrefix, useSuffix, setTabName, lastUsed
     }
@@ -94,11 +96,9 @@ struct Connection: Identifiable, Codable {
         groupID = try container.decodeIfPresent(UUID.self, forKey: .groupID)
         name = try container.decode(String.self, forKey: .name)
         command = try container.decode(String.self, forKey: .command)
-        // Default to true if keys are missing
         usePrefix = try container.decodeIfPresent(Bool.self, forKey: .usePrefix) ?? true
         useSuffix = try container.decodeIfPresent(Bool.self, forKey: .useSuffix) ?? true
         setTabName = try container.decodeIfPresent(Bool.self, forKey: .setTabName) ?? true
-        // Optional date
         lastUsed = try container.decodeIfPresent(Date.self, forKey: .lastUsed)
     }
     
@@ -115,7 +115,6 @@ struct Connection: Identifiable, Codable {
     }
 }
 
-// Clipboard Model
 enum ClipboardType: String, Codable {
     case text
     case image
@@ -123,10 +122,10 @@ enum ClipboardType: String, Codable {
 
 struct ClipboardItem: Identifiable, Codable {
     var id = UUID()
-    var content: String // For images, this is the description (e.g. "Image 500x500")
+    var content: String
     var timestamp: Date
     var type: ClipboardType = .text
-    var thumbnailData: Data? = nil // For images
+    var thumbnailData: Data? = nil
     
     enum CodingKeys: String, CodingKey {
         case id, content, timestamp, type, thumbnailData
@@ -140,7 +139,6 @@ struct ClipboardItem: Identifiable, Codable {
         self.thumbnailData = thumbnailData
     }
     
-    // Backward compatibility for old JSON that lacked 'type' and 'thumbnailData'
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -151,13 +149,12 @@ struct ClipboardItem: Identifiable, Codable {
     }
 }
 
-// Data Wrapper for Internal Persistence
 struct StoreData: Codable {
     var groups: [ConnectionGroup]
     var connections: [Connection]
 }
 
-// MARK: - Export/Import Models (User Friendly)
+// MARK: - Export/Import Models
 
 struct ExportGroup: Codable {
     var name: String
@@ -166,10 +163,10 @@ struct ExportGroup: Codable {
 struct ExportConnection: Codable {
     var name: String
     var command: String
-    var group: String? // Optional Group Name
-    var usePrefix: Bool? // Optional, default true
-    var useSuffix: Bool? // Optional, default true
-    var setTabName: Bool? // Optional, default true
+    var group: String?
+    var usePrefix: Bool?
+    var useSuffix: Bool?
+    var setTabName: Bool?
 }
 
 struct ExportData: Codable {
@@ -177,14 +174,12 @@ struct ExportData: Codable {
     var connections: [ExportConnection]
 }
 
-// Wrapper for Alert Identifiable state
 struct GroupAlertItem: Identifiable {
     let id: UUID
 }
 
-// MARK: - File Export/Import Document
 struct ConnectionsDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.json] }
+    static var readableContentTypes: [UTType] {[.json] }
 
     var exportData: ExportData
 

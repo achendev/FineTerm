@@ -42,11 +42,27 @@ struct AppConfig {
         static let clipboardAutoDeleteDelay = "clipboardAutoDeleteDelay"
         
         // Storage Limits
-        static let clipboardItemSizeLimitKB = "clipboardItemSizeLimitKB" // Fast Store Limit (Default 10KB)
-        static let clipboardLargeItemSizeLimitMB = "clipboardLargeItemSizeLimitMB" // Slow Store Limit (Default 5MB)
+        static let clipboardItemSizeLimitKB = "clipboardItemSizeLimitKB" 
+        static let clipboardLargeItemSizeLimitMB = "clipboardLargeItemSizeLimitMB"
         
         // App Shortcuts
         static let customAppShortcuts = "customAppShortcuts"
+        
+        // Group Navigation Shortcuts
+        static let enableNextGroupShortcut = "enableNextGroupShortcut"
+        static let nextGroupModifier = "nextGroupModifier"
+        static let nextGroupModifier2 = "nextGroupModifier2"
+        static let nextGroupKey = "nextGroupKey"
+        
+        static let enablePrevGroupShortcut = "enablePrevGroupShortcut"
+        static let prevGroupModifier = "prevGroupModifier"
+        static let prevGroupModifier2 = "prevGroupModifier2"
+        static let prevGroupKey = "prevGroupKey"
+        
+        static let enableToggleGroupShortcut = "enableToggleGroupShortcut"
+        static let toggleGroupModifier = "toggleGroupModifier"
+        static let toggleGroupModifier2 = "toggleGroupModifier2"
+        static let toggleGroupKey = "toggleGroupKey"
     }
     
     static let customAppShortcutsData = (try? JSONEncoder().encode([CustomAppShortcut(key: "i", modifier: "option", modifier2: nil, bundleIDs: [""])])) ?? Data()
@@ -84,19 +100,32 @@ struct AppConfig {
         Keys.clipboardHistorySize: 100,
         Keys.clipboardMaxImages: 50,
         
-        // Defaults for Editor
         Keys.clipboardShiftEnterToEditor: true,
-        Keys.clipboardEditorBundleID: "com.sublimetext.4", // Will fallback if missing
+        Keys.clipboardEditorBundleID: "com.sublimetext.4",
         Keys.clipboardTempExtension: "sh",
         Keys.clipboardAutoDeleteTempFile: true,
         Keys.clipboardAutoDeleteDelay: 2.0,
         
-        // Default 10KB for list, 5MB for blobs
         Keys.clipboardItemSizeLimitKB: 10,
         Keys.clipboardLargeItemSizeLimitMB: 5,
         
-        // Bindings array
-        Keys.customAppShortcuts: customAppShortcutsData
+        Keys.customAppShortcuts: customAppShortcutsData,
+        
+        // Group Navigation Defaults
+        Keys.enableNextGroupShortcut: false,
+        Keys.nextGroupModifier: "control",
+        Keys.nextGroupModifier2: "shift",
+        Keys.nextGroupKey: ".",
+        
+        Keys.enablePrevGroupShortcut: false,
+        Keys.prevGroupModifier: "control",
+        Keys.prevGroupModifier2: "shift",
+        Keys.prevGroupKey: ",",
+        
+        Keys.enableToggleGroupShortcut: false,
+        Keys.toggleGroupModifier: "control",
+        Keys.toggleGroupModifier2: "shift",
+        Keys.toggleGroupKey: "/"
     ]
     
     static func registerDefaults() {

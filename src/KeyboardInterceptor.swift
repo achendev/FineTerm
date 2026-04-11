@@ -129,6 +129,56 @@ func activateTerminal() {
     }
 }
 
+// Cycles through multiple windows of the same app seamlessly using Accessibility API
+func cycleAppWindows(for app: NSRunningApplication) {
+    let pid = app.processIdentifier
+    let appElement = AXUIElementCreateApplication(pid)
+    var windowsRef: CFTypeRef?
+    let err = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
+    guard err == .success, let windows = windowsRef as? [AXUIElement], windows.count > 1 else {
+        return
+    }
+    
+    // Filter for standard, non-minimized windows
+    var standardWindows: [AXUIElement] = []
+    for window in windows {
+        var roleRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(window, kAXRoleAttribute as CFString, &roleRef) == .success,
+           let role = roleRef as? String, role == kAXWindowRole {
+            
+            // Skip floating toolbars, hidden panels
+            var subroleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(window, kAXSubroleAttribute as CFString, &subroleRef)
+            let subrole = subroleRef as? String ?? ""
+            if subrole == kAXStandardWindowSubrole || subrole == "" {
+                var minimizedRef: CFTypeRef?
+                var isMinimized = false
+                if AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minimizedRef) == .success,
+                   let num = minimizedRef as? NSNumber {
+                    isMinimized = num.boolValue
+                }
+                
+                if !isMinimized {
+                    standardWindows.append(window)
+                }
+            }
+        }
+    }
+    
+    if standardWindows.count > 1 {
+        // AX Returns windows in Z-Order. The last window is the one furthest back.
+        // Bring the LAST one to the front to cycle backwards through the z-order natively.
+        let targetWindow = standardWindows.last!
+        
+        // Brute-force focus technique: Tell OS to focus app, set window to main, set window to focused, and raise it.
+        AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(targetWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(targetWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        AXUIElementPerformAction(targetWindow, kAXRaiseAction as CFString)
+        AXUIElementSetAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, targetWindow)
+    }
+}
+
 // Robust Helper to find the REAL frontmost app, bypassing NSWorkspace lag
 func getRealFrontmostApp() -> NSRunningApplication? {
     let workspace = NSWorkspace.shared
@@ -222,8 +272,19 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
             // We are ALREADY in this group -> Cycle to the next app
             let nextIndex = (currentIndex + 1) % validBundleIDs.count
             let targetApp = validBundleIDs[nextIndex]
-            if debug { print("DEBUG: Cycling group to \(targetApp)") }
-            DispatchQueue.main.async { activateApp(bundleID: targetApp) }
+            
+            if targetApp == frontID {
+                // Multi-window support: If the target app is already active, toggle through its other windows
+                if let app = frontApp {
+                    // MUST dispatch to Main Thread for AXUIElement operations to process reliably
+                    DispatchQueue.main.async {
+                        cycleAppWindows(for: app)
+                    }
+                }
+            } else {
+                if debug { print("DEBUG: Cycling group to \(targetApp)") }
+                DispatchQueue.main.async { activateApp(bundleID: targetApp) }
+            }
         } else {
             // Coming from outside -> Find the most recently active app in this group using Focus Tracker
             let targetApp = AppFocusTracker.shared.getMostRecent(from: validBundleIDs) ?? validBundleIDs[0]

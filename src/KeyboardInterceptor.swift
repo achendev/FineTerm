@@ -189,6 +189,7 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
     let frontID = frontApp?.bundleIdentifier ?? ""
     let isDebug = UserDefaults.standard.bool(forKey: AppConfig.Keys.debugMode)
     
+    // 1. If we are coming from OUTSIDE this shortcut group, let macOS restore the most recent app naturally
     if !validBundleIDs.contains(frontID) {
         let targetAppID = AppFocusTracker.shared.getMostRecent(from: validBundleIDs) ?? validBundleIDs[0]
         if isDebug { print("DEBUG: Switching from outside to most recent in group: \(targetAppID)") }
@@ -199,6 +200,7 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
     var cycleWindows: [CycleWindow] = []
     let workspace = NSWorkspace.shared
     
+    // 2. Gather all standard windows for all target apps (INSIDE group)
     for (index, bundleID) in validBundleIDs.enumerated() {
         let apps = workspace.runningApplications.filter { $0.bundleIdentifier == bundleID }
         for app in apps {
@@ -266,6 +268,7 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         }
     }
     
+    // 3. Fallback if no windows exist (app is completely hidden/closed)
     if cycleWindows.isEmpty {
         if let currentIndex = validBundleIDs.firstIndex(of: frontID) {
             let nextAppIndex = (currentIndex + 1) % validBundleIDs.count
@@ -276,6 +279,7 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         return
     }
     
+    // 4. Stable Sort: App Order -> Title -> X Position -> Y Position
     cycleWindows.sort { a, b in
         if a.appIndex != b.appIndex { return a.appIndex < b.appIndex }
         if a.title != b.title { return a.title < b.title }
@@ -283,6 +287,7 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         return a.frame.origin.y < b.frame.origin.y
     }
     
+    // 5. Find the currently focused window in our stable list
     var targetIndex = 0
     if let currentIndex = cycleWindows.firstIndex(where: { $0.isFocused }) {
         targetIndex = (currentIndex + 1) % cycleWindows.count
@@ -298,6 +303,7 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
     
     let target = cycleWindows[targetIndex]
     
+    // 6. Aggressive OS Targeting
     target.app.activate(options: .activateIgnoringOtherApps)
     let axApp = AXUIElementCreateApplication(target.app.processIdentifier)
     AXUIElementSetAttributeValue(axApp, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
@@ -347,9 +353,8 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     let keyCode = type == .keyDown ? event.getIntegerValueField(.keyboardEventKeycode) : -1
     let defaults = UserDefaults.standard
     
-    let frontApp = getRealFrontmostApp()
+    // --- STAGE 1: LIGHTNING FAST PRE-MATCHING (Zero System Calls) ---
     
-    // --- PRE-MATCHING GROUP NAVIGATION SHORTCUTS ---
     let isNextMatch = defaults.bool(forKey: AppConfig.Keys.enableNextGroupShortcut) &&
         isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
                               keyStr: defaults.string(forKey: AppConfig.Keys.nextGroupKey) ?? ".",
@@ -367,33 +372,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
                               keyStr: defaults.string(forKey: AppConfig.Keys.toggleGroupKey) ?? "/",
                               mod1Str: defaults.string(forKey: AppConfig.Keys.toggleGroupModifier) ?? "control",
                               mod2Str: defaults.string(forKey: AppConfig.Keys.toggleGroupModifier2) ?? "shift")
-                              
-    if isNextMatch || isPrevMatch || isToggleGroupMatch {
-        let enabledShortcuts = cachedCustomShortcuts.filter { $0.isEnabled && !$0.bundleIDs.filter({!$0.isEmpty}).isEmpty }
-        if !enabledShortcuts.isEmpty {
-            var target: CustomAppShortcut?
-            
-            if isNextMatch {
-                let idx = enabledShortcuts.firstIndex(where: { $0.id == lastUsedShortcutID }) ?? -1
-                let nextIdx = (idx + 1) % enabledShortcuts.count
-                target = enabledShortcuts[nextIdx]
-            } else if isPrevMatch {
-                let idx = enabledShortcuts.firstIndex(where: { $0.id == lastUsedShortcutID }) ?? 1
-                let prevIdx = (idx - 1 + enabledShortcuts.count) % enabledShortcuts.count
-                target = enabledShortcuts[prevIdx]
-            } else if isToggleGroupMatch {
-                target = enabledShortcuts.first(where: { $0.id == lastUsedShortcutID }) ?? enabledShortcuts[0]
-            }
-            
-            if let t = target {
-                lastUsedShortcutID = t.id
-                DispatchQueue.main.async { executeCustomShortcutCycle(validBundleIDs: t.bundleIDs.filter({!$0.isEmpty}), frontApp: frontApp) }
-            }
-        }
-        return type == .keyDown ? nil : Unmanaged.passUnretained(event)
-    }
     
-    // --- STAGE 1: LIGHTNING FAST PRE-MATCHING FOR CUSTOM APPS ---
     var matchedCustomShortcut: CustomAppShortcut?
     for shortcut in cachedCustomShortcuts {
         if !shortcut.isEnabled { continue }
@@ -406,7 +385,6 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         }
     }
     
-    // --- STAGE 1B: SYSTEM BUILT-IN SHORTCUTS ---
     let isMainMatch = isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
                                             keyStr: defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n",
                                             mod1Str: defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command",
@@ -424,12 +402,54 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
                                             mod1Str: defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command",
                                             mod2Str: nil)
     
-    if matchedCustomShortcut == nil && !isMainMatch && !isToggleMatch && !isClipMatch {
+    // EARLY EXIT: If this keypress doesn't match any configured shortcuts, exit instantly.
+    if !isNextMatch && !isPrevMatch && !isToggleGroupMatch && matchedCustomShortcut == nil && !isMainMatch && !isToggleMatch && !isClipMatch {
         return Unmanaged.passUnretained(event)
     }
     
-    // --- STAGE 2: EXECUTE ---
+    // --- STAGE 2: MATCH CONFIRMED, FETCH SYSTEM STATE ---
+    // Moving this down ensures zero lag for normal typing.
+    let frontApp = getRealFrontmostApp()
     
+    // Execute Group Navigation
+    if isNextMatch || isPrevMatch || isToggleGroupMatch {
+        let validShortcuts = cachedCustomShortcuts.filter { $0.isEnabled && $0.bundleIDs.contains(where: { !$0.isEmpty }) }
+        if !validShortcuts.isEmpty {
+            var target: CustomAppShortcut?
+            
+            // 1. Check if frontmost app belongs to any group
+            var currentIdx = -1
+            if let frontID = frontApp?.bundleIdentifier {
+                currentIdx = validShortcuts.firstIndex(where: { $0.bundleIDs.contains(frontID) }) ?? -1
+            }
+            
+            // 2. Fallback to last remembered group if outside a bound app
+            if currentIdx == -1 {
+                currentIdx = validShortcuts.firstIndex(where: { $0.id == lastUsedShortcutID }) ?? -1
+            }
+            
+            // 3. Resolve Navigation Direction
+            if isNextMatch {
+                let nextIdx = (currentIdx + 1) % validShortcuts.count
+                target = validShortcuts[nextIdx]
+            } else if isPrevMatch {
+                let baseIdx = currentIdx == -1 ? 0 : currentIdx
+                let prevIdx = (baseIdx - 1 + validShortcuts.count) % validShortcuts.count
+                target = validShortcuts[prevIdx]
+            } else if isToggleGroupMatch {
+                let baseIdx = currentIdx == -1 ? 0 : currentIdx
+                target = validShortcuts[baseIdx]
+            }
+            
+            if let t = target {
+                lastUsedShortcutID = t.id
+                DispatchQueue.main.async { executeCustomShortcutCycle(validBundleIDs: t.bundleIDs.filter({!$0.isEmpty}), frontApp: frontApp) }
+            }
+        }
+        return type == .keyDown ? nil : Unmanaged.passUnretained(event)
+    }
+    
+    // Execute Specific Custom Shortcut
     if let shortcut = matchedCustomShortcut {
         lastUsedShortcutID = shortcut.id
         let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
@@ -439,6 +459,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return type == .keyDown ? nil : Unmanaged.passUnretained(event)
     }
     
+    // Execute Main Shortcut Loop
     let target = defaults.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
     let isTerminalFront = frontApp?.bundleIdentifier == target
     let isFineTermFront = NSRunningApplication.current.isActive

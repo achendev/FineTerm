@@ -50,7 +50,8 @@ class KeyboardInterceptor {
             refreshCustomShortcutsCache()
         }
         
-        let eventMask = (1 << CGEventType.keyDown.rawValue)
+        // Listen to BOTH keyDown and flagsChanged (to support pure modifier shortcuts like Ctrl+Shift)
+        let eventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -87,7 +88,7 @@ class KeyboardInterceptor {
     }
 }
 
-// Strict Modifier matching for 1 or 2 modifiers (including Shift and Caps Lock)
+// Strict Modifier matching for up to 2 modifiers (including Shift and Caps Lock)
 func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
     var needsCmd = false
     var needsCtrl = false
@@ -103,7 +104,7 @@ func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
             case "option": needsOpt = true
             case "shift": needsShift = true
             case "capslock": needsCapsLock = true
-            // esc and tab are handled as KeyCodes, not flags, so ignore them here
+            // esc and tab are keys, not modifier flags, so ignore them here
             default: break
         }
     }
@@ -112,9 +113,19 @@ func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
     let hasCtrl = flags.contains(.maskControl)
     let hasOpt = flags.contains(.maskAlternate)
     let hasShift = flags.contains(.maskShift)
-    let hasCapsLock = flags.contains(.maskAlphaShift)
     
-    return hasCmd == needsCmd && hasCtrl == needsCtrl && hasOpt == needsOpt && hasShift == needsShift && hasCapsLock == needsCapsLock
+    // Core Modifiers MUST match perfectly
+    if hasCmd != needsCmd || hasCtrl != needsCtrl || hasOpt != needsOpt || hasShift != needsShift {
+        return false
+    }
+    
+    // Only check CapsLock if they explicitly requested it as a modifier. 
+    // Otherwise, allow shortcuts to work regardless of Caps Lock state.
+    if needsCapsLock {
+        return flags.contains(.maskAlphaShift)
+    }
+    
+    return true
 }
 
 // Helpers for Activation
@@ -265,7 +276,7 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
     }
     
     // 4. Stable Sort: App Order -> Title -> X Position -> Y Position
-    // This creates an immutable array order (e.g. [VSCode_Window1, Sublime_Window1, Sublime_Window2])
+    // This creates an immutable array order (e.g.[VSCode_Window1, Sublime_Window1, Sublime_Window2])
     cycleWindows.sort { a, b in
         if a.appIndex != b.appIndex { return a.appIndex < b.appIndex }
         if a.title != b.title { return a.title < b.title }
@@ -340,54 +351,76 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return Unmanaged.passUnretained(event)
     }
     
-    guard type == .keyDown else { return Unmanaged.passUnretained(event) }
+    guard type == .keyDown || type == .flagsChanged else { return Unmanaged.passUnretained(event) }
     
     let flags = event.flags
-    // Match any modifier to allow execution
-    let hasModifier = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) || flags.contains(.maskShift) || flags.contains(.maskAlphaShift)
-    if !hasModifier { return Unmanaged.passUnretained(event) }
-    
-    let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+    let keyCode = type == .keyDown ? event.getIntegerValueField(.keyboardEventKeycode) : -1
     let defaults = UserDefaults.standard
     
-    // --- STAGE 1: LIGHTNING FAST PRE-MATCHING ---
     var matchedCustomShortcut: CustomAppShortcut?
+    
+    // --- STAGE 1: LIGHTNING FAST PRE-MATCHING ---
     for shortcut in cachedCustomShortcuts {
         let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
-        if !validBundleIDs.isEmpty {
-            
-            var expectedCode: CGKeyCode? = nil
-            if !shortcut.key.isEmpty {
-                expectedCode = KeyboardInterceptor.getKeyCode(for: shortcut.key)
-            } else if shortcut.modifier2 == "esc" {
-                expectedCode = 53
-            } else if shortcut.modifier2 == "tab" {
-                expectedCode = 48
-            }
-            
+        if validBundleIDs.isEmpty { continue }
+        
+        var expectedCode: CGKeyCode? = nil
+        var isModifierOnly = false
+        
+        if !shortcut.key.isEmpty {
+            expectedCode = KeyboardInterceptor.getKeyCode(for: shortcut.key)
+        } else if shortcut.modifier2 == "esc" {
+            expectedCode = 53
+        } else if shortcut.modifier2 == "tab" {
+            expectedCode = 48
+        } else {
+            // Key is empty and modifier2 is just another modifier flag (like Ctrl+Shift)
+            isModifierOnly = true
+        }
+        
+        if type == .keyDown && !isModifierOnly {
             if let code = expectedCode,
                keyCode == Int64(code),
                isModifierMatch(flags: flags, mod1: shortcut.modifier, mod2: shortcut.modifier2) {
                 matchedCustomShortcut = shortcut
                 break
             }
+        } else if type == .flagsChanged && isModifierOnly {
+            // Prevent single-modifier shortcuts (e.g. just pressing "Cmd")
+            // Must have at least TWO defined modifiers to trigger a flagsChanged event cycle
+            let mod1 = shortcut.modifier
+            let mod2 = shortcut.modifier2 ?? "none"
+            
+            if mod1 != "none" && mod2 != "none" {
+                if isModifierMatch(flags: flags, mod1: mod1, mod2: mod2) {
+                    matchedCustomShortcut = shortcut
+                    break
+                }
+            }
         }
     }
     
-    let mainKey = defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n"
-    let mainMod = defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command"
-    let mainCode = KeyboardInterceptor.getKeyCode(for: mainKey)
-    let isMainMatch = (mainCode != nil && keyCode == Int64(mainCode!)) && isModifierMatch(flags: flags, mod1: mainMod, mod2: nil)
+    // Check built-in keydown shortcuts (only evaluate on actual keydowns, ignore flagsChanged)
+    var isMainMatch = false
+    var isToggleMatch = false
+    var isClipMatch = false
     
-    let toggleKey = defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutKey) ?? "h"
-    let toggleMod = defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutModifier) ?? "command"
-    let toggleCode = KeyboardInterceptor.getKeyCode(for: toggleKey)
-    let isToggleMatch = defaults.bool(forKey: AppConfig.Keys.enableTerminalToggleShortcut) && (toggleCode != nil && keyCode == Int64(toggleCode!)) && isModifierMatch(flags: flags, mod1: toggleMod, mod2: nil)
-    
-    let clipKey = defaults.string(forKey: AppConfig.Keys.clipboardShortcutKey) ?? "u"
-    let clipMod = defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command"
-    let clipCode = KeyboardInterceptor.getKeyCode(for: clipKey)
-    let isClipMatch = defaults.bool(forKey: AppConfig.Keys.enableClipboardManager) && (clipCode != nil && keyCode == Int64(clipCode!)) && isModifierMatch(flags: flags, mod1: clipMod, mod2: nil)
+    if type == .keyDown {
+        let mainKey = defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n"
+        let mainMod = defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command"
+        let mainCode = KeyboardInterceptor.getKeyCode(for: mainKey)
+        isMainMatch = (mainCode != nil && keyCode == Int64(mainCode!)) && isModifierMatch(flags: flags, mod1: mainMod, mod2: nil)
+        
+        let toggleKey = defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutKey) ?? "h"
+        let toggleMod = defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutModifier) ?? "command"
+        let toggleCode = KeyboardInterceptor.getKeyCode(for: toggleKey)
+        isToggleMatch = defaults.bool(forKey: AppConfig.Keys.enableTerminalToggleShortcut) && (toggleCode != nil && keyCode == Int64(toggleCode!)) && isModifierMatch(flags: flags, mod1: toggleMod, mod2: nil)
+        
+        let clipKey = defaults.string(forKey: AppConfig.Keys.clipboardShortcutKey) ?? "u"
+        let clipMod = defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command"
+        let clipCode = KeyboardInterceptor.getKeyCode(for: clipKey)
+        isClipMatch = defaults.bool(forKey: AppConfig.Keys.enableClipboardManager) && (clipCode != nil && keyCode == Int64(clipCode!)) && isModifierMatch(flags: flags, mod1: clipMod, mod2: nil)
+    }
     
     // EARLY EXIT: If this keypress doesn't match any of our configured shortcuts, let it pass instantly.
     if matchedCustomShortcut == nil && !isMainMatch && !isToggleMatch && !isClipMatch {
@@ -405,7 +438,10 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         DispatchQueue.main.async {
             executeCustomShortcutCycle(validBundleIDs: validBundleIDs, frontApp: frontApp)
         }
-        return nil // Swallow event
+        
+        // DANGEROUS: Do not swallow .flagsChanged events or modifiers will get "stuck" in the OS.
+        // It's perfectly safe to swallow .keyDown though.
+        return type == .keyDown ? nil : Unmanaged.passUnretained(event)
     }
     
     // Execute Main Shortcut Loop

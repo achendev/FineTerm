@@ -53,7 +53,7 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 500, minHeight: 450)
+        .frame(minWidth: 550, minHeight: 450)
     }
 }
 
@@ -131,24 +131,45 @@ struct ShortcutRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Header: Shortcut Key + Group Controls
-            HStack {
+            HStack(spacing: 6) {
                 Picker("", selection: $shortcut.modifier) {
                     Text("Command").tag("command")
                     Text("Control").tag("control")
                     Text("Option").tag("option")
+                    Text("Shift").tag("shift")
+                    Text("Caps Lock").tag("capslock")
                 }
-                .frame(width: 100)
+                .frame(width: 95)
                 .labelsHidden()
                 
+                Text("+")
+                
+                Picker("", selection: Binding(
+                    get: { shortcut.modifier2 ?? "none" },
+                    set: { val in shortcut.modifier2 = (val == "none" ? nil : val) }
+                )) {
+                    Text("None").tag("none")
+                    Text("Command").tag("command")
+                    Text("Control").tag("control")
+                    Text("Option").tag("option")
+                    Text("Shift").tag("shift")
+                    Text("Caps Lock").tag("capslock")
+                    Text("Esc").tag("esc")
+                    Text("Tab").tag("tab")
+                }
+                .frame(width: 95)
+                .labelsHidden()
+
                 Text("+")
                 
                 TextField("Key", text: Binding(
                     get: { shortcut.key },
                     set: { val in
-                        shortcut.key = String(val.prefix(1)).lowercased()
+                        // Increased length to allow typing "tab", "esc", "space", etc.
+                        shortcut.key = String(val.prefix(10)).lowercased()
                     }
                 ))
-                .frame(width: 40)
+                .frame(width: 60)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 
                 Spacer()
@@ -241,7 +262,7 @@ struct AppShortcutsSettingsTab: View {
                 }
                 
                 Button(action: {
-                    shortcuts.append(CustomAppShortcut(key: "", modifier: "command", bundleIDs: [""]))
+                    shortcuts.append(CustomAppShortcut(key: "", modifier: "command", modifier2: nil, bundleIDs: [""]))
                 }) {
                     HStack {
                         Image(systemName: "plus.circle")

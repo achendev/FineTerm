@@ -13,17 +13,19 @@ struct CustomAppShortcut: Identifiable, Codable, Equatable {
     var id = UUID()
     var key: String
     var modifier: String
+    var modifier2: String?
     var bundleIDs: [String]
     
-    init(id: UUID = UUID(), key: String, modifier: String, bundleIDs: [String]) {
+    init(id: UUID = UUID(), key: String, modifier: String, modifier2: String? = nil, bundleIDs: [String]) {
         self.id = id
         self.key = key
         self.modifier = modifier
+        self.modifier2 = modifier2
         self.bundleIDs = bundleIDs
     }
     
     enum CodingKeys: String, CodingKey {
-        case id, key, modifier, bundleIDs, bundleID
+        case id, key, modifier, modifier2, bundleIDs, bundleID
     }
     
     init(from decoder: Decoder) throws {
@@ -31,6 +33,7 @@ struct CustomAppShortcut: Identifiable, Codable, Equatable {
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         key = try container.decode(String.self, forKey: .key)
         modifier = try container.decode(String.self, forKey: .modifier)
+        modifier2 = try container.decodeIfPresent(String.self, forKey: .modifier2)
         
         // Backward compatibility: Handle both new array format and old single string format
         if let ids = try? container.decode([String].self, forKey: .bundleIDs) {
@@ -47,6 +50,7 @@ struct CustomAppShortcut: Identifiable, Codable, Equatable {
         try container.encode(id, forKey: .id)
         try container.encode(key, forKey: .key)
         try container.encode(modifier, forKey: .modifier)
+        try container.encodeIfPresent(modifier2, forKey: .modifier2)
         try container.encode(bundleIDs, forKey: .bundleIDs)
     }
 }

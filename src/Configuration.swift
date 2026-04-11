@@ -49,7 +49,7 @@ struct AppConfig {
         static let customAppShortcuts = "customAppShortcuts"
     }
     
-    static let customAppShortcutsData = (try? JSONEncoder().encode([CustomAppShortcut(key: "i", modifier: "option", bundleIDs: [""])])) ?? Data()
+    static let customAppShortcutsData = (try? JSONEncoder().encode([CustomAppShortcut(key: "i", modifier: "option", modifier2: nil, bundleIDs: [""])])) ?? Data()
     
     static let defaults: [String: Any] = [
         Keys.copyOnSelect: true,

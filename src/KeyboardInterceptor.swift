@@ -24,8 +24,13 @@ class KeyboardInterceptor {
     var runLoopSource: CFRunLoopSource?
 
     static func getKeyCode(for char: String) -> CGKeyCode? {
-        let lower = char.lowercased()
+        let lower = char.lowercased().trimmingCharacters(in: .whitespaces)
         switch lower {
+            case "esc", "escape": return 53
+            case "tab": return 48
+            case "space": return 49
+            case "enter", "return": return 36
+            case "capslock", "caps lock": return 57
             case "a": return 0; case "s": return 1; case "d": return 2; case "f": return 3; case "h": return 4
             case "g": return 5; case "z": return 6; case "x": return 7; case "c": return 8; case "v": return 9
             case "b": return 11; case "q": return 12; case "w": return 13; case "e": return 14; case "r": return 15
@@ -82,13 +87,34 @@ class KeyboardInterceptor {
     }
 }
 
-func isModifierMatch(flags: CGEventFlags, targetStr: String) -> Bool {
-    switch targetStr {
-        case "command": return flags.contains(.maskCommand) && !flags.contains(.maskControl) && !flags.contains(.maskAlternate)
-        case "control": return flags.contains(.maskControl) && !flags.contains(.maskCommand) && !flags.contains(.maskAlternate)
-        case "option":  return flags.contains(.maskAlternate) && !flags.contains(.maskCommand) && !flags.contains(.maskControl)
-        default: return false
+// Strict Modifier matching for 1 or 2 modifiers (including Shift and Caps Lock)
+func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
+    var needsCmd = false
+    var needsCtrl = false
+    var needsOpt = false
+    var needsShift = false
+    var needsCapsLock = false
+    
+    let mods = [mod1, mod2].compactMap { $0 }.filter { $0 != "none" && !$0.isEmpty }
+    for m in mods {
+        switch m {
+            case "command": needsCmd = true
+            case "control": needsCtrl = true
+            case "option": needsOpt = true
+            case "shift": needsShift = true
+            case "capslock": needsCapsLock = true
+            // esc and tab are handled as KeyCodes, not flags, so ignore them here
+            default: break
+        }
     }
+    
+    let hasCmd = flags.contains(.maskCommand)
+    let hasCtrl = flags.contains(.maskControl)
+    let hasOpt = flags.contains(.maskAlternate)
+    let hasShift = flags.contains(.maskShift)
+    let hasCapsLock = flags.contains(.maskAlphaShift)
+    
+    return hasCmd == needsCmd && hasCtrl == needsCtrl && hasOpt == needsOpt && hasShift == needsShift && hasCapsLock == needsCapsLock
 }
 
 // Helpers for Activation
@@ -317,22 +343,31 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     guard type == .keyDown else { return Unmanaged.passUnretained(event) }
     
     let flags = event.flags
-    let hasModifier = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
+    // Match any modifier to allow execution
+    let hasModifier = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) || flags.contains(.maskShift) || flags.contains(.maskAlphaShift)
     if !hasModifier { return Unmanaged.passUnretained(event) }
     
     let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
     let defaults = UserDefaults.standard
     
     // --- STAGE 1: LIGHTNING FAST PRE-MATCHING ---
-    // Do NOT call expensive APIs (like Window Z-Order) unless we perfectly match a registered shortcut
-    
     var matchedCustomShortcut: CustomAppShortcut?
     for shortcut in cachedCustomShortcuts {
         let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
-        if !validBundleIDs.isEmpty && !shortcut.key.isEmpty {
-            if let code = KeyboardInterceptor.getKeyCode(for: shortcut.key),
+        if !validBundleIDs.isEmpty {
+            
+            var expectedCode: CGKeyCode? = nil
+            if !shortcut.key.isEmpty {
+                expectedCode = KeyboardInterceptor.getKeyCode(for: shortcut.key)
+            } else if shortcut.modifier2 == "esc" {
+                expectedCode = 53
+            } else if shortcut.modifier2 == "tab" {
+                expectedCode = 48
+            }
+            
+            if let code = expectedCode,
                keyCode == Int64(code),
-               isModifierMatch(flags: flags, targetStr: shortcut.modifier) {
+               isModifierMatch(flags: flags, mod1: shortcut.modifier, mod2: shortcut.modifier2) {
                 matchedCustomShortcut = shortcut
                 break
             }
@@ -342,17 +377,17 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     let mainKey = defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n"
     let mainMod = defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command"
     let mainCode = KeyboardInterceptor.getKeyCode(for: mainKey)
-    let isMainMatch = (mainCode != nil && keyCode == Int64(mainCode!)) && isModifierMatch(flags: flags, targetStr: mainMod)
+    let isMainMatch = (mainCode != nil && keyCode == Int64(mainCode!)) && isModifierMatch(flags: flags, mod1: mainMod, mod2: nil)
     
     let toggleKey = defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutKey) ?? "h"
     let toggleMod = defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutModifier) ?? "command"
     let toggleCode = KeyboardInterceptor.getKeyCode(for: toggleKey)
-    let isToggleMatch = defaults.bool(forKey: AppConfig.Keys.enableTerminalToggleShortcut) && (toggleCode != nil && keyCode == Int64(toggleCode!)) && isModifierMatch(flags: flags, targetStr: toggleMod)
+    let isToggleMatch = defaults.bool(forKey: AppConfig.Keys.enableTerminalToggleShortcut) && (toggleCode != nil && keyCode == Int64(toggleCode!)) && isModifierMatch(flags: flags, mod1: toggleMod, mod2: nil)
     
     let clipKey = defaults.string(forKey: AppConfig.Keys.clipboardShortcutKey) ?? "u"
     let clipMod = defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command"
     let clipCode = KeyboardInterceptor.getKeyCode(for: clipKey)
-    let isClipMatch = defaults.bool(forKey: AppConfig.Keys.enableClipboardManager) && (clipCode != nil && keyCode == Int64(clipCode!)) && isModifierMatch(flags: flags, targetStr: clipMod)
+    let isClipMatch = defaults.bool(forKey: AppConfig.Keys.enableClipboardManager) && (clipCode != nil && keyCode == Int64(clipCode!)) && isModifierMatch(flags: flags, mod1: clipMod, mod2: nil)
     
     // EARLY EXIT: If this keypress doesn't match any of our configured shortcuts, let it pass instantly.
     if matchedCustomShortcut == nil && !isMainMatch && !isToggleMatch && !isClipMatch {

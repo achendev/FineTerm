@@ -149,7 +149,15 @@ func isGlobalShortcutMatch(type: CGEventType, eventKeyCode: Int64, flags: CGEven
     if keyStr.isEmpty {
         let m1 = mod1Str
         let m2 = mod2Str ?? "none"
-        if m1 == "none" || m2 == "none" { return false } // Block single-modifier pure shortcuts
+        
+        if m1 == "none" && m2 == "none" { return false }
+        
+        if m1 == "none" || m2 == "none" {
+            let activeMod = m1 != "none" ? m1 : m2
+            let isSpecific = activeMod.hasPrefix("left ") || activeMod.hasPrefix("right ")
+            if !isSpecific { return false } // Block single-modifier pure shortcuts unless they are specific left/right
+        }
+        
         return type == .flagsChanged && isModifierMatch(flags: flags, mod1: m1, mod2: m2)
     } else {
         if type != .keyDown { return false }

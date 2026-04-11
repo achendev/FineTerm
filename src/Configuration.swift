@@ -111,19 +111,19 @@ struct AppConfig {
         
         Keys.customAppShortcuts: customAppShortcutsData,
         
-        // Group Navigation Defaults
+        // Group Navigation Defaults (Disabled by default)
         Keys.enableNextGroupShortcut: false,
-        Keys.nextGroupModifier: "control",
+        Keys.nextGroupModifier: "right control",
         Keys.nextGroupModifier2: "shift",
         Keys.nextGroupKey: ".",
         
         Keys.enablePrevGroupShortcut: false,
-        Keys.prevGroupModifier: "control",
+        Keys.prevGroupModifier: "right control",
         Keys.prevGroupModifier2: "shift",
         Keys.prevGroupKey: ",",
         
         Keys.enableToggleGroupShortcut: false,
-        Keys.toggleGroupModifier: "control",
+        Keys.toggleGroupModifier: "right control",
         Keys.toggleGroupModifier2: "shift",
         Keys.toggleGroupKey: "/"
     ]

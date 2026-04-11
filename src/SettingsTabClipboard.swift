@@ -37,11 +37,9 @@ struct ClipboardSettingsTab: View {
                             
                             HStack {
                                 Picker("", selection: $clipboardShortcutModifier) {
-                                    Text("Command").tag("command")
-                                    Text("Control").tag("control")
-                                    Text("Option").tag("option")
+                                    ModifierPickerContent()
                                 }
-                                .frame(width: 100)
+                                .frame(width: 120)
                                 .labelsHidden()
                                 
                                 Text("+")

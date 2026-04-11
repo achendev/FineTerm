@@ -89,24 +89,11 @@ class KeyboardInterceptor {
     }
 }
 
-// Strict Modifier matching for up to 2 modifiers
+// Ultra-fast exact modifier matching, including left/right specific checks
 func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
-    var needsCmd = false
-    var needsCtrl = false
-    var needsOpt = false
-    var needsShift = false
-    var needsCapsLock = false
-    
-    let mods = [mod1, mod2].compactMap { $0 }.filter { $0 != "none" && !$0.isEmpty }
-    for m in mods {
-        switch m {
-            case "command": needsCmd = true
-            case "control": needsCtrl = true
-            case "option": needsOpt = true
-            case "shift": needsShift = true
-            case "capslock": needsCapsLock = true
-            default: break
-        }
+    var requiredMods = [String]()
+    for m in[mod1, mod2].compactMap({ $0 }).filter({ $0 != "none" && !$0.isEmpty }) {
+        requiredMods.append(m)
     }
     
     let hasCmd = flags.contains(.maskCommand)
@@ -114,13 +101,47 @@ func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
     let hasOpt = flags.contains(.maskAlternate)
     let hasShift = flags.contains(.maskShift)
     
+    let needsCmd = requiredMods.contains(where: { $0.contains("command") })
+    let needsCtrl = requiredMods.contains(where: { $0.contains("control") })
+    let needsOpt = requiredMods.contains(where: { $0.contains("option") })
+    let needsShift = requiredMods.contains(where: { $0.contains("shift") })
+    let needsCaps = requiredMods.contains("capslock")
+    
+    // Core Modifiers category must match perfectly
     if hasCmd != needsCmd || hasCtrl != needsCtrl || hasOpt != needsOpt || hasShift != needsShift {
         return false
     }
     
-    if needsCapsLock {
-        return flags.contains(.maskAlphaShift)
+    if needsCaps && !flags.contains(.maskAlphaShift) {
+        return false
     }
+    
+    // CoreGraphics raw values for precise Left/Right hardware matching
+    let raw = flags.rawValue
+    let leftCtrl = (raw & 0x01) != 0
+    let leftShift = (raw & 0x02) != 0
+    let rightShift = (raw & 0x04) != 0
+    let leftCmd = (raw & 0x08) != 0
+    let rightCmd = (raw & 0x10) != 0
+    let leftOpt = (raw & 0x20) != 0
+    let rightOpt = (raw & 0x40) != 0
+    let rightCtrl = (raw & 0x2000) != 0
+    
+    // Enforce left/right strictly if requested
+    for req in requiredMods {
+        switch req {
+        case "left command": if !leftCmd { return false }
+        case "right command": if !rightCmd { return false }
+        case "left control": if !leftCtrl { return false }
+        case "right control": if !rightCtrl { return false }
+        case "left option": if !leftOpt { return false }
+        case "right option": if !rightOpt { return false }
+        case "left shift": if !leftShift { return false }
+        case "right shift": if !rightShift { return false }
+        default: break
+        }
+    }
+    
     return true
 }
 
@@ -189,7 +210,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
     let frontID = frontApp?.bundleIdentifier ?? ""
     let isDebug = UserDefaults.standard.bool(forKey: AppConfig.Keys.debugMode)
     
-    // 1. If we are coming from OUTSIDE this shortcut group, let macOS restore the most recent app naturally
     if !validBundleIDs.contains(frontID) {
         let targetAppID = AppFocusTracker.shared.getMostRecent(from: validBundleIDs) ?? validBundleIDs[0]
         if isDebug { print("DEBUG: Switching from outside to most recent in group: \(targetAppID)") }
@@ -200,7 +220,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
     var cycleWindows: [CycleWindow] = []
     let workspace = NSWorkspace.shared
     
-    // 2. Gather all standard windows for all target apps (INSIDE group)
     for (index, bundleID) in validBundleIDs.enumerated() {
         let apps = workspace.runningApplications.filter { $0.bundleIdentifier == bundleID }
         for app in apps {
@@ -268,7 +287,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         }
     }
     
-    // 3. Fallback if no windows exist (app is completely hidden/closed)
     if cycleWindows.isEmpty {
         if let currentIndex = validBundleIDs.firstIndex(of: frontID) {
             let nextAppIndex = (currentIndex + 1) % validBundleIDs.count
@@ -279,7 +297,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         return
     }
     
-    // 4. Stable Sort: App Order -> Title -> X Position -> Y Position
     cycleWindows.sort { a, b in
         if a.appIndex != b.appIndex { return a.appIndex < b.appIndex }
         if a.title != b.title { return a.title < b.title }
@@ -287,7 +304,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         return a.frame.origin.y < b.frame.origin.y
     }
     
-    // 5. Find the currently focused window in our stable list
     var targetIndex = 0
     if let currentIndex = cycleWindows.firstIndex(where: { $0.isFocused }) {
         targetIndex = (currentIndex + 1) % cycleWindows.count
@@ -303,7 +319,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
     
     let target = cycleWindows[targetIndex]
     
-    // 6. Aggressive OS Targeting
     target.app.activate(options: .activateIgnoringOtherApps)
     let axApp = AXUIElementCreateApplication(target.app.processIdentifier)
     AXUIElementSetAttributeValue(axApp, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
@@ -358,19 +373,19 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     let isNextMatch = defaults.bool(forKey: AppConfig.Keys.enableNextGroupShortcut) &&
         isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
                               keyStr: defaults.string(forKey: AppConfig.Keys.nextGroupKey) ?? ".",
-                              mod1Str: defaults.string(forKey: AppConfig.Keys.nextGroupModifier) ?? "control",
+                              mod1Str: defaults.string(forKey: AppConfig.Keys.nextGroupModifier) ?? "right control",
                               mod2Str: defaults.string(forKey: AppConfig.Keys.nextGroupModifier2) ?? "shift")
                               
     let isPrevMatch = defaults.bool(forKey: AppConfig.Keys.enablePrevGroupShortcut) &&
         isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
                               keyStr: defaults.string(forKey: AppConfig.Keys.prevGroupKey) ?? ",",
-                              mod1Str: defaults.string(forKey: AppConfig.Keys.prevGroupModifier) ?? "control",
+                              mod1Str: defaults.string(forKey: AppConfig.Keys.prevGroupModifier) ?? "right control",
                               mod2Str: defaults.string(forKey: AppConfig.Keys.prevGroupModifier2) ?? "shift")
 
     let isToggleGroupMatch = defaults.bool(forKey: AppConfig.Keys.enableToggleGroupShortcut) &&
         isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
                               keyStr: defaults.string(forKey: AppConfig.Keys.toggleGroupKey) ?? "/",
-                              mod1Str: defaults.string(forKey: AppConfig.Keys.toggleGroupModifier) ?? "control",
+                              mod1Str: defaults.string(forKey: AppConfig.Keys.toggleGroupModifier) ?? "right control",
                               mod2Str: defaults.string(forKey: AppConfig.Keys.toggleGroupModifier2) ?? "shift")
     
     var matchedCustomShortcut: CustomAppShortcut?
@@ -402,13 +417,12 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
                                             mod1Str: defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command",
                                             mod2Str: nil)
     
-    // EARLY EXIT: If this keypress doesn't match any configured shortcuts, exit instantly.
+    // EARLY EXIT
     if !isNextMatch && !isPrevMatch && !isToggleGroupMatch && matchedCustomShortcut == nil && !isMainMatch && !isToggleMatch && !isClipMatch {
         return Unmanaged.passUnretained(event)
     }
     
     // --- STAGE 2: MATCH CONFIRMED, FETCH SYSTEM STATE ---
-    // Moving this down ensures zero lag for normal typing.
     let frontApp = getRealFrontmostApp()
     
     // Execute Group Navigation
@@ -416,9 +430,9 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         let validShortcuts = cachedCustomShortcuts.filter { $0.isEnabled && $0.bundleIDs.contains(where: { !$0.isEmpty }) }
         if !validShortcuts.isEmpty {
             var target: CustomAppShortcut?
-            
-            // 1. Check if frontmost app belongs to any group
             var currentIdx = -1
+            
+            // 1. Check if frontmost app belongs to ANY group
             if let frontID = frontApp?.bundleIdentifier {
                 currentIdx = validShortcuts.firstIndex(where: { $0.bundleIDs.contains(frontID) }) ?? -1
             }
@@ -428,7 +442,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
                 currentIdx = validShortcuts.firstIndex(where: { $0.id == lastUsedShortcutID }) ?? -1
             }
             
-            // 3. Resolve Navigation Direction
+            // 3. Navigate Direction
             if isNextMatch {
                 let nextIdx = (currentIdx + 1) % validShortcuts.count
                 target = validShortcuts[nextIdx]

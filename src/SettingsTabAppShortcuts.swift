@@ -79,27 +79,16 @@ struct GroupNavRow: View {
                 .font(.caption)
             
             Picker("", selection: $modifier1) {
-                Text("Command").tag("command")
-                Text("Control").tag("control")
-                Text("Option").tag("option")
-                Text("Shift").tag("shift")
-                Text("Caps Lock").tag("capslock")
+                ModifierPickerContent()
             }
-            .frame(width: 95).labelsHidden()
+            .frame(width: 120).labelsHidden()
             
             Text("+")
             
             Picker("", selection: $modifier2) {
-                Text("None").tag("none")
-                Text("Command").tag("command")
-                Text("Control").tag("control")
-                Text("Option").tag("option")
-                Text("Shift").tag("shift")
-                Text("Caps Lock").tag("capslock")
-                Text("Esc").tag("esc")
-                Text("Tab").tag("tab")
+                ModifierPickerContent(includeNone: true, includeKeys: true)
             }
-            .frame(width: 95).labelsHidden()
+            .frame(width: 120).labelsHidden()
 
             Text("+")
             
@@ -128,13 +117,9 @@ struct ShortcutRowView: View {
                     .help("Enable or disable this shortcut group")
                     
                 Picker("", selection: $shortcut.modifier) {
-                    Text("Command").tag("command")
-                    Text("Control").tag("control")
-                    Text("Option").tag("option")
-                    Text("Shift").tag("shift")
-                    Text("Caps Lock").tag("capslock")
+                    ModifierPickerContent()
                 }
-                .frame(width: 95)
+                .frame(width: 120)
                 .labelsHidden()
                 
                 Text("+")
@@ -143,16 +128,9 @@ struct ShortcutRowView: View {
                     get: { shortcut.modifier2 ?? "none" },
                     set: { val in shortcut.modifier2 = (val == "none" ? nil : val) }
                 )) {
-                    Text("None").tag("none")
-                    Text("Command").tag("command")
-                    Text("Control").tag("control")
-                    Text("Option").tag("option")
-                    Text("Shift").tag("shift")
-                    Text("Caps Lock").tag("capslock")
-                    Text("Esc").tag("esc")
-                    Text("Tab").tag("tab")
+                    ModifierPickerContent(includeNone: true, includeKeys: true)
                 }
-                .frame(width: 95)
+                .frame(width: 120)
                 .labelsHidden()
 
                 Text("+")
@@ -161,7 +139,7 @@ struct ShortcutRowView: View {
                     get: { shortcut.key },
                     set: { val in shortcut.key = String(val.prefix(10)).lowercased() }
                 ))
-                .frame(width: 60)
+                .frame(width: 50)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 
                 Spacer()
@@ -218,17 +196,17 @@ struct AppShortcutsSettingsTab: View {
     @State private var saveTask: DispatchWorkItem?
 
     @AppStorage(AppConfig.Keys.enableNextGroupShortcut) private var enableNext = false
-    @AppStorage(AppConfig.Keys.nextGroupModifier) private var nextMod1 = "control"
+    @AppStorage(AppConfig.Keys.nextGroupModifier) private var nextMod1 = "right control"
     @AppStorage(AppConfig.Keys.nextGroupModifier2) private var nextMod2 = "shift"
     @AppStorage(AppConfig.Keys.nextGroupKey) private var nextKey = "."
 
     @AppStorage(AppConfig.Keys.enablePrevGroupShortcut) private var enablePrev = false
-    @AppStorage(AppConfig.Keys.prevGroupModifier) private var prevMod1 = "control"
+    @AppStorage(AppConfig.Keys.prevGroupModifier) private var prevMod1 = "right control"
     @AppStorage(AppConfig.Keys.prevGroupModifier2) private var prevMod2 = "shift"
     @AppStorage(AppConfig.Keys.prevGroupKey) private var prevKey = ","
 
     @AppStorage(AppConfig.Keys.enableToggleGroupShortcut) private var enableToggle = false
-    @AppStorage(AppConfig.Keys.toggleGroupModifier) private var toggleMod1 = "control"
+    @AppStorage(AppConfig.Keys.toggleGroupModifier) private var toggleMod1 = "right control"
     @AppStorage(AppConfig.Keys.toggleGroupModifier2) private var toggleMod2 = "shift"
     @AppStorage(AppConfig.Keys.toggleGroupKey) private var toggleKey = "/"
 

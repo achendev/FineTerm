@@ -9,6 +9,41 @@ enum SettingsTab: String, CaseIterable {
     case advanced = "Advanced"
 }
 
+struct ModifierPickerContent: View {
+    var includeNone: Bool = false
+    var includeKeys: Bool = false
+    
+    var body: some View {
+        if includeNone { Text("None").tag("none") }
+        
+        Text("Command").tag("command")
+        Text("Control").tag("control")
+        Text("Option").tag("option")
+        Text("Shift").tag("shift")
+        Text("Caps Lock").tag("capslock")
+        
+        Divider()
+        
+        Text("Left Command").tag("left command")
+        Text("Left Control").tag("left control")
+        Text("Left Option").tag("left option")
+        Text("Left Shift").tag("left shift")
+        
+        Divider()
+        
+        Text("Right Command").tag("right command")
+        Text("Right Control").tag("right control")
+        Text("Right Option").tag("right option")
+        Text("Right Shift").tag("right shift")
+        
+        if includeKeys {
+            Divider()
+            Text("Esc").tag("esc")
+            Text("Tab").tag("tab")
+        }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var clipboardStore: ClipboardStore
     @State private var selectedTab: SettingsTab = .connections

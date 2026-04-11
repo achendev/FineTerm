@@ -22,11 +22,9 @@ struct ConnectionsSettingsTab: View {
                     
                     HStack {
                         Picker("", selection: $globalShortcutModifier) {
-                            Text("Command").tag("command")
-                            Text("Control").tag("control")
-                            Text("Option").tag("option")
+                            ModifierPickerContent()
                         }
-                        .frame(width: 100)
+                        .frame(width: 120)
                         .labelsHidden()
                         
                         Text("+")
@@ -64,11 +62,9 @@ struct ConnectionsSettingsTab: View {
                             
                             HStack {
                                 Picker("", selection: $terminalToggleShortcutModifier) {
-                                    Text("Command").tag("command")
-                                    Text("Control").tag("control")
-                                    Text("Option").tag("option")
+                                    ModifierPickerContent()
                                 }
-                                .frame(width: 100)
+                                .frame(width: 120)
                                 .labelsHidden()
                                 
                                 Text("+")

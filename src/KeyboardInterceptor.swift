@@ -129,54 +129,137 @@ func activateTerminal() {
     }
 }
 
-// Cycles through multiple windows of the same app seamlessly using Accessibility API
-func cycleAppWindows(for app: NSRunningApplication) {
-    let pid = app.processIdentifier
-    let appElement = AXUIElementCreateApplication(pid)
-    var windowsRef: CFTypeRef?
-    let err = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
-    guard err == .success, let windows = windowsRef as? [AXUIElement], windows.count > 1 else {
-        return
-    }
+// Struct to hold stable window properties for sorting
+struct CycleWindow {
+    let app: NSRunningApplication
+    let axWindow: AXUIElement
+    let appIndex: Int
+    let title: String
+    let frame: CGRect
+    let isFocused: Bool
+}
+
+// Stable Round-Robin Cycling Engine
+func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApplication?) {
+    var cycleWindows: [CycleWindow] = []
+    let workspace = NSWorkspace.shared
     
-    // Filter for standard, non-minimized windows
-    var standardWindows: [AXUIElement] = []
-    for window in windows {
-        var roleRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(window, kAXRoleAttribute as CFString, &roleRef) == .success,
-           let role = roleRef as? String, role == kAXWindowRole {
+    // 1. Gather all standard windows for all target apps
+    for (index, bundleID) in validBundleIDs.enumerated() {
+        let apps = workspace.runningApplications.filter { $0.bundleIdentifier == bundleID }
+        for app in apps {
+            let pid = app.processIdentifier
+            let axApp = AXUIElementCreateApplication(pid)
             
-            // Skip floating toolbars, hidden panels
-            var subroleRef: CFTypeRef?
-            AXUIElementCopyAttributeValue(window, kAXSubroleAttribute as CFString, &subroleRef)
-            let subrole = subroleRef as? String ?? ""
-            if subrole == kAXStandardWindowSubrole || subrole == "" {
-                var minimizedRef: CFTypeRef?
-                var isMinimized = false
-                if AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minimizedRef) == .success,
-                   let num = minimizedRef as? NSNumber {
-                    isMinimized = num.boolValue
-                }
+            var windowsRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+               let windows = windowsRef as? [AXUIElement] {
                 
-                if !isMinimized {
-                    standardWindows.append(window)
+                var focusedWindowRef: CFTypeRef?
+                AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &focusedWindowRef)
+                let focusedWindow = focusedWindowRef as! AXUIElement? // Can be nil
+                
+                for window in windows {
+                    // Filter Standard Windows
+                    var roleRef: CFTypeRef?
+                    AXUIElementCopyAttributeValue(window, kAXRoleAttribute as CFString, &roleRef)
+                    if (roleRef as? String) != kAXWindowRole { continue }
+                    
+                    var subroleRef: CFTypeRef?
+                    AXUIElementCopyAttributeValue(window, kAXSubroleAttribute as CFString, &subroleRef)
+                    let subrole = subroleRef as? String ?? ""
+                    if subrole != kAXStandardWindowSubrole && subrole != "" { continue }
+                    
+                    var minRef: CFTypeRef?
+                    if AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minRef) == .success,
+                       let isMin = minRef as? NSNumber, isMin.boolValue { continue }
+                       
+                    // Get Position and Size to filter out 0x0 ghosts
+                    var posRef: CFTypeRef?
+                    var sizeRef: CFTypeRef?
+                    var frame: CGRect = .zero
+                    
+                    if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &posRef) == .success,
+                       AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef) == .success {
+                       if let p = posRef, let s = sizeRef, CFGetTypeID(p) == AXValueGetTypeID(), CFGetTypeID(s) == AXValueGetTypeID() {
+                           var pos: CGPoint = .zero
+                           var size: CGSize = .zero
+                           AXValueGetValue(p as! AXValue, .cgPoint, &pos)
+                           AXValueGetValue(s as! AXValue, .cgSize, &size)
+                           
+                           if size.width < 100 || size.height < 100 { continue }
+                           frame = CGRect(origin: pos, size: size)
+                       }
+                    } else {
+                        continue
+                    }
+                    
+                    // Get Title for secondary stable sorting
+                    var titleRef: CFTypeRef?
+                    AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
+                    let title = titleRef as? String ?? ""
+                    
+                    // Electron apps sometimes fail `kAXFocusedWindowAttribute`. Fallback to `kAXMainAttribute`
+                    var isMain = false
+                    var mainRef: CFTypeRef?
+                    if AXUIElementCopyAttributeValue(window, kAXMainAttribute as CFString, &mainRef) == .success,
+                       let m = mainRef as? NSNumber, m.boolValue {
+                        isMain = true
+                    }
+                    
+                    let isFocused = (frontApp?.processIdentifier == pid) && 
+                                    ((focusedWindow != nil && CFEqual(window, focusedWindow!)) || isMain)
+                    
+                    cycleWindows.append(CycleWindow(app: app, axWindow: window, appIndex: index, title: title, frame: frame, isFocused: isFocused))
                 }
             }
         }
     }
     
-    if standardWindows.count > 1 {
-        // AX Returns windows in Z-Order. The last window is the one furthest back.
-        // Bring the LAST one to the front to cycle backwards through the z-order natively.
-        let targetWindow = standardWindows.last!
-        
-        // Brute-force focus technique: Tell OS to focus app, set window to main, set window to focused, and raise it.
-        AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-        AXUIElementSetAttributeValue(targetWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
-        AXUIElementSetAttributeValue(targetWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        AXUIElementPerformAction(targetWindow, kAXRaiseAction as CFString)
-        AXUIElementSetAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, targetWindow)
+    // 2. Fallback if no windows exist (app is closed or completely hidden)
+    if cycleWindows.isEmpty {
+        if let firstID = validBundleIDs.first {
+            activateApp(bundleID: firstID)
+        }
+        return
     }
+    
+    // 3. Stable Sort: App Order -> Title -> X Position -> Y Position
+    // This creates an immutable array order (e.g. [VSCode_Window1, Sublime_Window1, Sublime_Window2])
+    cycleWindows.sort { a, b in
+        if a.appIndex != b.appIndex { return a.appIndex < b.appIndex }
+        if a.title != b.title { return a.title < b.title }
+        if abs(a.frame.origin.x - b.frame.origin.x) > 1.0 { return a.frame.origin.x < b.frame.origin.x }
+        return a.frame.origin.y < b.frame.origin.y
+    }
+    
+    // 4. Find the currently focused window in our stable list
+    var targetIndex = 0
+    if let currentIndex = cycleWindows.firstIndex(where: { $0.isFocused }) {
+        // Round Robin: Take the next window, loop back to 0 if at the end
+        targetIndex = (currentIndex + 1) % cycleWindows.count
+    } else if let frontID = frontApp?.bundleIdentifier, let frontAppIndex = validBundleIDs.firstIndex(of: frontID) {
+        // App is frontmost, but no specific window is focused (e.g., system dialog active)
+        // Jump to the next app in the group
+        let nextAppIndex = (frontAppIndex + 1) % validBundleIDs.count
+        if let firstForNextApp = cycleWindows.firstIndex(where: { $0.appIndex == nextAppIndex }) {
+            targetIndex = firstForNextApp
+        }
+    }
+    
+    let target = cycleWindows[targetIndex]
+    
+    // 5. Aggressive OS Targeting
+    // Just activating the app isn't enough; we force the OS to raise the specific AXUIElement
+    target.app.activate(options: .activateIgnoringOtherApps)
+    
+    let axApp = AXUIElementCreateApplication(target.app.processIdentifier)
+    AXUIElementSetAttributeValue(axApp, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+    
+    AXUIElementSetAttributeValue(target.axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
+    AXUIElementSetAttributeValue(target.axWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+    AXUIElementPerformAction(target.axWindow, kAXRaiseAction as CFString)
+    AXUIElementSetAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, target.axWindow)
 }
 
 // Robust Helper to find the REAL frontmost app, bypassing NSWorkspace lag
@@ -260,36 +343,15 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     }
     
     // --- STAGE 2: MATCH CONFIRMED, FETCH SYSTEM STATE ---
-    let debug = defaults.bool(forKey: AppConfig.Keys.debugMode)
     let frontApp = getRealFrontmostApp()
     
     // Execute Custom App Shortcut
     if let shortcut = matchedCustomShortcut {
         let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
-        let frontID = frontApp?.bundleIdentifier ?? ""
         
-        if let currentIndex = validBundleIDs.firstIndex(of: frontID) {
-            // We are ALREADY in this group -> Cycle to the next app
-            let nextIndex = (currentIndex + 1) % validBundleIDs.count
-            let targetApp = validBundleIDs[nextIndex]
-            
-            if targetApp == frontID {
-                // Multi-window support: If the target app is already active, toggle through its other windows
-                if let app = frontApp {
-                    // MUST dispatch to Main Thread for AXUIElement operations to process reliably
-                    DispatchQueue.main.async {
-                        cycleAppWindows(for: app)
-                    }
-                }
-            } else {
-                if debug { print("DEBUG: Cycling group to \(targetApp)") }
-                DispatchQueue.main.async { activateApp(bundleID: targetApp) }
-            }
-        } else {
-            // Coming from outside -> Find the most recently active app in this group using Focus Tracker
-            let targetApp = AppFocusTracker.shared.getMostRecent(from: validBundleIDs) ?? validBundleIDs[0]
-            if debug { print("DEBUG: Switching to most recent in group: \(targetApp)") }
-            DispatchQueue.main.async { activateApp(bundleID: targetApp) }
+        // Dispatch to main thread immediately because AXUIElement APIs require a RunLoop context to process reliably
+        DispatchQueue.main.async {
+            executeCustomShortcutCycle(validBundleIDs: validBundleIDs, frontApp: frontApp)
         }
         return nil // Swallow event
     }

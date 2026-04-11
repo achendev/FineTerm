@@ -1,34 +1,292 @@
 import SwiftUI
 
+enum SettingsTab: String, CaseIterable {
+    case connections = "Connections"
+    case apps = "Apps"
+    case clipboard = "Clipboard"
+    case terminal = "Terminal"
+    case advanced = "Advanced"
+}
+
 struct SettingsView: View {
     @ObservedObject var clipboardStore: ClipboardStore
+    @State private var selectedTab: SettingsTab = .connections
 
     var body: some View {
-        TabView {
-            ConnectionsSettingsTab()
-                .tabItem {
-                    Label("Connections", systemImage: "network")
+        VStack(spacing: 0) {
+            // In-window Tab Navigation
+            Picker("", selection: $selectedTab) {
+                Text("Connections").tag(SettingsTab.connections)
+                Text("Apps").tag(SettingsTab.apps)
+                Text("Clipboard").tag(SettingsTab.clipboard)
+                Text("Terminal").tag(SettingsTab.terminal)
+                Text("Advanced").tag(SettingsTab.advanced)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+            .onChange(of: selectedTab) { tab in
+                // Only refresh the heavy app list when actually switching to the Apps tab
+                if tab == .apps {
+                    AppListService.shared.loadApps(forceReload: true)
                 }
+            }
             
-            ClipboardSettingsTab(clipboardStore: clipboardStore)
-                .tabItem {
-                    Label("Clipboard", systemImage: "doc.on.clipboard")
-                }
+            Divider()
             
-            TerminalSettingsTab()
-                .tabItem {
-                    Label("Terminal", systemImage: "terminal")
+            // Tab Content
+            Group {
+                switch selectedTab {
+                case .connections:
+                    ConnectionsSettingsTab()
+                case .apps:
+                    AppShortcutsSettingsTab()
+                case .clipboard:
+                    ClipboardSettingsTab(clipboardStore: clipboardStore)
+                case .terminal:
+                    TerminalSettingsTab()
+                case .advanced:
+                    AdvancedSettingsTab()
                 }
-            
-            AdvancedSettingsTab()
-                .tabItem {
-                    Label("Advanced", systemImage: "gearshape")
-                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding()
-        .frame(minWidth: 450, minHeight: 450)
+        .frame(minWidth: 500, minHeight: 450)
     }
 }
+
+// ---------------------------------------------------------
+// App Shortcuts Setting Tab (Optimized for performance)
+// ---------------------------------------------------------
+
+// Isolated Picker View: Prevents the parent view from redrawing the entire 300+ item list during the selection animation
+struct AppSelectorView: View {
+    @Binding var selection: String
+    let availableApps: [EditorApp]
+    let onChange: () -> Void
+    
+    var body: some View {
+        Picker("", selection: Binding(
+            get: { selection },
+            set: { val in
+                selection = val
+                // CRITICAL FIX FOR LAG: Defer the parent state update by a tiny fraction of a second.
+                // This allows the native macOS dropdown menu to snap shut instantly without being 
+                // blocked by SwiftUI trying to recalculate the view hierarchy.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    onChange()
+                }
+            }
+        )) {
+            Text("Select an App...").tag("")
+            Divider()
+            ForEach(availableApps) { app in
+                Text(app.name).tag(app.id)
+            }
+        }
+        .labelsHidden()
+    }
+}
+
+struct ShortcutRowView: View {
+    @State private var localShortcut: CustomAppShortcut
+    let availableApps: [EditorApp]
+    let onChange: (CustomAppShortcut) -> Void
+    let onDelete: () -> Void
+    
+    init(shortcut: CustomAppShortcut, availableApps: [EditorApp], onChange: @escaping (CustomAppShortcut) -> Void, onDelete: @escaping () -> Void) {
+        self._localShortcut = State(initialValue: shortcut)
+        self.availableApps = availableApps
+        self.onChange = onChange
+        self.onDelete = onDelete
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header: Shortcut Key + Group Controls
+            HStack {
+                Picker("", selection: Binding(
+                    get: { localShortcut.modifier },
+                    set: { val in
+                        localShortcut.modifier = val
+                        triggerChange()
+                    }
+                )) {
+                    Text("Command").tag("command")
+                    Text("Control").tag("control")
+                    Text("Option").tag("option")
+                }
+                .frame(width: 100)
+                .labelsHidden()
+                
+                Text("+")
+                
+                TextField("Key", text: Binding(
+                    get: { localShortcut.key },
+                    set: { val in
+                        let formatted = String(val.prefix(1)).lowercased()
+                        if formatted != localShortcut.key {
+                            localShortcut.key = formatted
+                            triggerChange()
+                        }
+                    }
+                ))
+                .frame(width: 40)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                
+                Spacer()
+                
+                // Add app to this shortcut group
+                Button(action: {
+                    localShortcut.bundleIDs.append("")
+                    triggerChange()
+                }) {
+                    Image(systemName: "plus.app")
+                        .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.borderless)
+                .help("Add another app to cycle with this shortcut")
+                
+                // Delete entire shortcut group
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .foregroundColor(.red)
+                }
+                .buttonStyle(.borderless)
+                .help("Delete this shortcut entirely")
+            }
+            
+            // App Selectors
+            VStack(spacing: 6) {
+                ForEach(localShortcut.bundleIDs.indices, id: \.self) { index in
+                    HStack {
+                        // Use the optimized isolated picker
+                        AppSelectorView(
+                            selection: $localShortcut.bundleIDs[index],
+                            availableApps: availableApps,
+                            onChange: triggerChange
+                        )
+                        
+                        // Allow removing individual app if there's more than one
+                        if localShortcut.bundleIDs.count > 1 {
+                            Button(action: {
+                                localShortcut.bundleIDs.remove(at: index)
+                                triggerChange()
+                            }) {
+                                Image(systemName: "minus.circle")
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove this app from the cycle")
+                        }
+                    }
+                }
+            }
+            .padding(.leading, 10)
+        }
+        .padding()
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+    }
+    
+    private func triggerChange() {
+        DispatchQueue.main.async {
+            onChange(localShortcut)
+        }
+    }
+}
+
+struct AppShortcutsSettingsTab: View {
+    @AppStorage(AppConfig.Keys.customAppShortcuts) private var shortcutsData: Data = AppConfig.customAppShortcutsData
+    @State private var shortcuts: [CustomAppShortcut] = []
+    @StateObject private var appListService = AppListService.shared
+    
+    // Throttler for saving
+    @State private var saveTask: DispatchWorkItem?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Custom App Shortcuts")
+                        .font(.headline)
+                    Text("Bind global shortcuts to switch to any application instantly. Add multiple apps to cycle between them.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                VStack(spacing: 16) {
+                    // Extracting the row heavily isolates state and fixes Picker lag
+                    ForEach(shortcuts) { shortcut in
+                        ShortcutRowView(
+                            shortcut: shortcut,
+                            availableApps: appListService.availableApps,
+                            onChange: { updatedShortcut in
+                                if let idx = shortcuts.firstIndex(where: { $0.id == updatedShortcut.id }) {
+                                    shortcuts[idx] = updatedShortcut
+                                    saveThrottled()
+                                }
+                            },
+                            onDelete: {
+                                shortcuts.removeAll { $0.id == shortcut.id }
+                                saveThrottled()
+                            }
+                        )
+                    }
+                }
+                
+                Button(action: {
+                    shortcuts.append(CustomAppShortcut(key: "", modifier: "command", bundleIDs: [""]))
+                    saveThrottled()
+                }) {
+                    HStack {
+                        Image(systemName: "plus.circle")
+                        Text("Add New Shortcut")
+                    }
+                }
+                .padding(.top, 10)
+            }
+            .padding()
+        }
+        .onAppear {
+            load()
+            // Just request a soft load on appear in case it wasn't triggered by the tab switch
+            appListService.loadApps(forceReload: false)
+        }
+    }
+    
+    private func load() {
+        if let decoded = try? JSONDecoder().decode([CustomAppShortcut].self, from: shortcutsData) {
+            shortcuts = decoded
+        }
+    }
+    
+    private func saveThrottled() {
+        saveTask?.cancel()
+        
+        // Copy the array to avoid thread-safety issues during encoding
+        let currentShortcuts = self.shortcuts
+        
+        let task = DispatchWorkItem {
+            // Perform heavy JSON Serialization strictly on the background thread
+            if let encoded = try? JSONEncoder().encode(currentShortcuts) {
+                DispatchQueue.main.async {
+                    // Only jump back to main thread to assign the value (which triggers UserDefaults write)
+                    self.shortcutsData = encoded
+                }
+            }
+        }
+        saveTask = task
+        // Execute background serialization after 300ms debounce
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.3, execute: task)
+    }
+}
+
+// ---------------------------------------------------------
+// Other Setting Tabs
+// ---------------------------------------------------------
 
 struct ConnectionsSettingsTab: View {
     @AppStorage(AppConfig.Keys.globalShortcutKey) private var globalShortcutKey = "n"

@@ -47,8 +47,9 @@ class SettingsWindowManager: NSObject, NSWindowDelegate {
             return
         }
         
+        // Widened default width from 450 to 550 to give the segmented control more room
         let newWindow = SettingsWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 450, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 550, height: 500),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false

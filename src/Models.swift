@@ -9,6 +9,48 @@ struct AppColors {
 
 // MARK: - Internal Data Models
 
+struct CustomAppShortcut: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var key: String
+    var modifier: String
+    var bundleIDs: [String]
+    
+    init(id: UUID = UUID(), key: String, modifier: String, bundleIDs: [String]) {
+        self.id = id
+        self.key = key
+        self.modifier = modifier
+        self.bundleIDs = bundleIDs
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, key, modifier, bundleIDs, bundleID
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        key = try container.decode(String.self, forKey: .key)
+        modifier = try container.decode(String.self, forKey: .modifier)
+        
+        // Backward compatibility: Handle both new array format and old single string format
+        if let ids = try? container.decode([String].self, forKey: .bundleIDs) {
+            bundleIDs = ids
+        } else if let single = try? container.decode(String.self, forKey: .bundleID) {
+            bundleIDs = [single]
+        } else {
+            bundleIDs = [""]
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(key, forKey: .key)
+        try container.encode(modifier, forKey: .modifier)
+        try container.encode(bundleIDs, forKey: .bundleIDs)
+    }
+}
+
 struct ConnectionGroup: Identifiable, Codable {
     var id = UUID()
     var name: String

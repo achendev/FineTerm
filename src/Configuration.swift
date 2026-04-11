@@ -44,7 +44,12 @@ struct AppConfig {
         // Storage Limits
         static let clipboardItemSizeLimitKB = "clipboardItemSizeLimitKB" // Fast Store Limit (Default 10KB)
         static let clipboardLargeItemSizeLimitMB = "clipboardLargeItemSizeLimitMB" // Slow Store Limit (Default 5MB)
+        
+        // App Shortcuts
+        static let customAppShortcuts = "customAppShortcuts"
     }
+    
+    static let customAppShortcutsData = (try? JSONEncoder().encode([CustomAppShortcut(key: "i", modifier: "option", bundleIDs: [""])])) ?? Data()
     
     static let defaults: [String: Any] = [
         Keys.copyOnSelect: true,
@@ -88,7 +93,10 @@ struct AppConfig {
         
         // Default 10KB for list, 5MB for blobs
         Keys.clipboardItemSizeLimitKB: 10,
-        Keys.clipboardLargeItemSizeLimitMB: 5
+        Keys.clipboardLargeItemSizeLimitMB: 5,
+        
+        // Bindings array
+        Keys.customAppShortcuts: customAppShortcutsData
     ]
     
     static func registerDefaults() {

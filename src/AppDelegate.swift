@@ -47,6 +47,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         // 9. Setup Live Snapping Observer
         setupTerminalObserver()
+        
+        // 10. Start App Focus Tracker
+        AppFocusTracker.shared.start()
     }
     
     func setupTerminalObserver() {
@@ -244,7 +247,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func setupMainWindow() {
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 500),
-            styleMask:[.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 320, height: 200)

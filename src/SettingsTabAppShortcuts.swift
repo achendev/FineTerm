@@ -62,42 +62,69 @@ struct NativeAppPicker: NSViewRepresentable {
 struct GroupNavRow: View {
     let title: String
     @Binding var isEnabled: Bool
-    @Binding var modifier1: String
-    @Binding var modifier2: String
-    @Binding var key: String
+    @Binding var triggers: [ShortcutTrigger]
     
     var body: some View {
-        HStack(spacing: 6) {
-            Toggle("", isOn: $isEnabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .help("Enable this global group navigation shortcut")
-            
-            Text(title)
-                .frame(width: 95, alignment: .leading)
-                .font(.caption)
-            
-            Picker("", selection: $modifier1) {
-                ModifierPickerContent()
-            }
-            .frame(width: 120).labelsHidden()
-            
-            Text("+")
-            
-            Picker("", selection: $modifier2) {
-                ModifierPickerContent(includeNone: true, includeKeys: true)
-            }
-            .frame(width: 120).labelsHidden()
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(0..<triggers.count, id: \.self) { index in
+                HStack(spacing: 6) {
+                    if index == 0 {
+                        Toggle("", isOn: $isEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .frame(width: 38, alignment: .leading)
+                            .help("Enable this global group navigation shortcut")
+                        
+                        Button(action: { triggers.append(ShortcutTrigger(key: "", modifier: "command")) }) {
+                            Image(systemName: "plus.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundColor(.accentColor)
+                        .frame(width: 16)
+                        
+                        Text(title)
+                            .frame(width: 85, alignment: .leading)
+                            .font(.caption)
+                    } else {
+                        Spacer().frame(width: 38)
+                        
+                        Button(action: { triggers.remove(at: index) }) {
+                            Image(systemName: "minus.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundColor(.red)
+                        .frame(width: 16)
+                        
+                        Text("")
+                            .frame(width: 85, alignment: .leading)
+                    }
+                    
+                    Picker("", selection: $triggers[index].modifier) {
+                        ModifierPickerContent()
+                    }
+                    .frame(width: 120).labelsHidden()
+                    
+                    Text("+")
+                    
+                    Picker("", selection: Binding(
+                        get: { triggers[index].modifier2 ?? "none" },
+                        set: { val in triggers[index].modifier2 = (val == "none" ? nil : val) }
+                    )) {
+                        ModifierPickerContent(includeNone: true, includeKeys: true)
+                    }
+                    .frame(width: 120).labelsHidden()
 
-            Text("+")
-            
-            TextField("Key", text: Binding(
-                get: { key },
-                set: { val in key = String(val.prefix(10)).lowercased() }
-            ))
-            .frame(width: 60)
-            .textFieldStyle(RoundedBorderTextFieldStyle())
+                    Text("+")
+                    
+                    TextField("Key", text: Binding(
+                        get: { triggers[index].key },
+                        set: { val in triggers[index].key = String(val.prefix(10)).lowercased() }
+                    ))
+                    .frame(width: 60)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                }
+            }
         }
     }
 }
@@ -109,52 +136,81 @@ struct ShortcutRowView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Toggle("", isOn: $shortcut.isEnabled)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .help("Enable or disable this shortcut group")
-                    
-                Picker("", selection: $shortcut.modifier) {
-                    ModifierPickerContent()
-                }
-                .frame(width: 120)
-                .labelsHidden()
-                
-                Text("+")
-                
-                Picker("", selection: Binding(
-                    get: { shortcut.modifier2 ?? "none" },
-                    set: { val in shortcut.modifier2 = (val == "none" ? nil : val) }
-                )) {
-                    ModifierPickerContent(includeNone: true, includeKeys: true)
-                }
-                .frame(width: 120)
-                .labelsHidden()
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(0..<shortcut.triggers.count, id: \.self) { index in
+                        HStack(spacing: 6) {
+                            if index == 0 {
+                                Toggle("", isOn: $shortcut.isEnabled)
+                                    .labelsHidden()
+                                    .toggleStyle(.switch)
+                                    .controlSize(.mini)
+                                    .frame(width: 38, alignment: .leading)
+                                    .help("Enable or disable this shortcut group")
+                                    
+                                Button(action: { shortcut.triggers.append(ShortcutTrigger(key: "", modifier: "command")) }) {
+                                    Image(systemName: "plus.circle")
+                                }
+                                .buttonStyle(.borderless)
+                                .foregroundColor(.accentColor)
+                                .frame(width: 16)
+                            } else {
+                                Spacer().frame(width: 38)
+                                
+                                Button(action: { shortcut.triggers.remove(at: index) }) {
+                                    Image(systemName: "minus.circle")
+                                }
+                                .buttonStyle(.borderless)
+                                .foregroundColor(.red)
+                                .frame(width: 16)
+                            }
+                            
+                            Picker("", selection: $shortcut.triggers[index].modifier) {
+                                ModifierPickerContent()
+                            }
+                            .frame(width: 120)
+                            .labelsHidden()
+                            
+                            Text("+")
+                            
+                            Picker("", selection: Binding(
+                                get: { shortcut.triggers[index].modifier2 ?? "none" },
+                                set: { val in shortcut.triggers[index].modifier2 = (val == "none" ? nil : val) }
+                            )) {
+                                ModifierPickerContent(includeNone: true, includeKeys: true)
+                            }
+                            .frame(width: 120)
+                            .labelsHidden()
 
-                Text("+")
-                
-                TextField("Key", text: Binding(
-                    get: { shortcut.key },
-                    set: { val in shortcut.key = String(val.prefix(10)).lowercased() }
-                ))
-                .frame(width: 50)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
+                            Text("+")
+                            
+                            TextField("Key", text: Binding(
+                                get: { shortcut.triggers[index].key },
+                                set: { val in shortcut.triggers[index].key = String(val.prefix(10)).lowercased() }
+                            ))
+                            .frame(width: 50)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                        }
+                    }
+                }
                 
                 Spacer()
                 
-                Button(action: { shortcut.bundleIDs.append("") }) {
-                    Image(systemName: "plus.app").foregroundColor(.accentColor)
+                VStack(alignment: .trailing, spacing: 8) {
+                    HStack {
+                        Button(action: { shortcut.bundleIDs.append("") }) {
+                            Image(systemName: "plus.app").foregroundColor(.accentColor)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Add another app to cycle with this shortcut")
+                        
+                        Button(action: onDelete) {
+                            Image(systemName: "trash").foregroundColor(.red)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Delete this shortcut entirely")
+                    }
                 }
-                .buttonStyle(.borderless)
-                .help("Add another app to cycle with this shortcut")
-                
-                Button(action: onDelete) {
-                    Image(systemName: "trash").foregroundColor(.red)
-                }
-                .buttonStyle(.borderless)
-                .help("Delete this shortcut entirely")
             }
             
             VStack(spacing: 6) {
@@ -192,23 +248,21 @@ struct ShortcutRowView: View {
 struct AppShortcutsSettingsTab: View {
     @AppStorage(AppConfig.Keys.customAppShortcuts) private var shortcutsData: Data = AppConfig.customAppShortcutsData
     @State private var shortcuts: [CustomAppShortcut] = []
+    
     @StateObject private var appListService = AppListService.shared
     @State private var saveTask: DispatchWorkItem?
 
     @AppStorage(AppConfig.Keys.enableNextGroupShortcut) private var enableNext = false
-    @AppStorage(AppConfig.Keys.nextGroupModifier) private var nextMod1 = "right control"
-    @AppStorage(AppConfig.Keys.nextGroupModifier2) private var nextMod2 = "shift"
-    @AppStorage(AppConfig.Keys.nextGroupKey) private var nextKey = "."
+    @AppStorage(AppConfig.Keys.nextGroupTriggers) private var nextGroupTriggersData: Data = Data()
+    @State private var nextTriggers: [ShortcutTrigger] = []
 
     @AppStorage(AppConfig.Keys.enablePrevGroupShortcut) private var enablePrev = false
-    @AppStorage(AppConfig.Keys.prevGroupModifier) private var prevMod1 = "right control"
-    @AppStorage(AppConfig.Keys.prevGroupModifier2) private var prevMod2 = "shift"
-    @AppStorage(AppConfig.Keys.prevGroupKey) private var prevKey = ","
+    @AppStorage(AppConfig.Keys.prevGroupTriggers) private var prevGroupTriggersData: Data = Data()
+    @State private var prevTriggers: [ShortcutTrigger] = []
 
     @AppStorage(AppConfig.Keys.enableToggleGroupShortcut) private var enableToggle = false
-    @AppStorage(AppConfig.Keys.toggleGroupModifier) private var toggleMod1 = "right control"
-    @AppStorage(AppConfig.Keys.toggleGroupModifier2) private var toggleMod2 = "shift"
-    @AppStorage(AppConfig.Keys.toggleGroupKey) private var toggleKey = "/"
+    @AppStorage(AppConfig.Keys.toggleGroupTriggers) private var toggleGroupTriggersData: Data = Data()
+    @State private var toggleTriggers: [ShortcutTrigger] = []
 
     var body: some View {
         ScrollView {
@@ -218,9 +272,9 @@ struct AppShortcutsSettingsTab: View {
                     Text("Group Navigation Shortcuts").font(.headline)
                     Text("Navigate between your shortcut groups without using their specific hotkeys.").font(.caption).foregroundColor(.secondary)
 
-                    GroupNavRow(title: "Next Group", isEnabled: $enableNext, modifier1: $nextMod1, modifier2: $nextMod2, key: $nextKey)
-                    GroupNavRow(title: "Prev Group", isEnabled: $enablePrev, modifier1: $prevMod1, modifier2: $prevMod2, key: $prevKey)
-                    GroupNavRow(title: "Toggle Current", isEnabled: $enableToggle, modifier1: $toggleMod1, modifier2: $toggleMod2, key: $toggleKey)
+                    GroupNavRow(title: "Next Group", isEnabled: $enableNext, triggers: $nextTriggers)
+                    GroupNavRow(title: "Prev Group", isEnabled: $enablePrev, triggers: $prevTriggers)
+                    GroupNavRow(title: "Toggle Current", isEnabled: $enableToggle, triggers: $toggleTriggers)
                 }
                 .padding()
                 .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
@@ -247,11 +301,11 @@ struct AppShortcutsSettingsTab: View {
                 }
                 
                 Button(action: {
-                    shortcuts.append(CustomAppShortcut(key: "", modifier: "command", modifier2: nil, bundleIDs: [""]))
+                    shortcuts.append(CustomAppShortcut(triggers: [ShortcutTrigger(key: "", modifier: "command")], bundleIDs: [""]))
                 }) {
                     HStack {
                         Image(systemName: "plus.circle")
-                        Text("Add New Shortcut")
+                        Text("Add New Bind")
                     }
                 }
                 .padding(.top, 10)
@@ -265,12 +319,29 @@ struct AppShortcutsSettingsTab: View {
         .onChange(of: shortcuts) { newValue in
             saveThrottled(newValue)
         }
+        .onChange(of: nextTriggers) { val in if let d = try? JSONEncoder().encode(val) { nextGroupTriggersData = d } }
+        .onChange(of: prevTriggers) { val in if let d = try? JSONEncoder().encode(val) { prevGroupTriggersData = d } }
+        .onChange(of: toggleTriggers) { val in if let d = try? JSONEncoder().encode(val) { toggleGroupTriggersData = d } }
     }
     
     private func load() {
         if let decoded = try? JSONDecoder().decode([CustomAppShortcut].self, from: shortcutsData) {
             shortcuts = decoded
         }
+        nextTriggers = loadGroupTriggers(data: nextGroupTriggersData, mod1Key: AppConfig.Keys.nextGroupModifier, mod2Key: AppConfig.Keys.nextGroupModifier2, keyKey: AppConfig.Keys.nextGroupKey, defKey: ".")
+        prevTriggers = loadGroupTriggers(data: prevGroupTriggersData, mod1Key: AppConfig.Keys.prevGroupModifier, mod2Key: AppConfig.Keys.prevGroupModifier2, keyKey: AppConfig.Keys.prevGroupKey, defKey: ",")
+        toggleTriggers = loadGroupTriggers(data: toggleGroupTriggersData, mod1Key: AppConfig.Keys.toggleGroupModifier, mod2Key: AppConfig.Keys.toggleGroupModifier2, keyKey: AppConfig.Keys.toggleGroupKey, defKey: "/")
+    }
+    
+    private func loadGroupTriggers(data: Data, mod1Key: String, mod2Key: String, keyKey: String, defKey: String) -> [ShortcutTrigger] {
+        if let decoded = try? JSONDecoder().decode([ShortcutTrigger].self, from: data), !decoded.isEmpty {
+            return decoded
+        }
+        // Fallback to old scalar keys migration
+        let m1 = UserDefaults.standard.string(forKey: mod1Key) ?? "right control"
+        let m2 = UserDefaults.standard.string(forKey: mod2Key) ?? "shift"
+        let k = UserDefaults.standard.string(forKey: keyKey) ?? defKey
+        return[ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
     }
     
     private func saveThrottled(_ currentShortcuts: [CustomAppShortcut]) {

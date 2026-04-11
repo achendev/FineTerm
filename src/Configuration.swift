@@ -50,22 +50,27 @@ struct AppConfig {
         
         // Group Navigation Shortcuts
         static let enableNextGroupShortcut = "enableNextGroupShortcut"
-        static let nextGroupModifier = "nextGroupModifier"
-        static let nextGroupModifier2 = "nextGroupModifier2"
-        static let nextGroupKey = "nextGroupKey"
+        static let nextGroupModifier = "nextGroupModifier" // Legacy
+        static let nextGroupModifier2 = "nextGroupModifier2" // Legacy
+        static let nextGroupKey = "nextGroupKey" // Legacy
+        static let nextGroupTriggers = "nextGroupTriggers"
         
         static let enablePrevGroupShortcut = "enablePrevGroupShortcut"
-        static let prevGroupModifier = "prevGroupModifier"
-        static let prevGroupModifier2 = "prevGroupModifier2"
-        static let prevGroupKey = "prevGroupKey"
+        static let prevGroupModifier = "prevGroupModifier" // Legacy
+        static let prevGroupModifier2 = "prevGroupModifier2" // Legacy
+        static let prevGroupKey = "prevGroupKey" // Legacy
+        static let prevGroupTriggers = "prevGroupTriggers"
         
         static let enableToggleGroupShortcut = "enableToggleGroupShortcut"
-        static let toggleGroupModifier = "toggleGroupModifier"
-        static let toggleGroupModifier2 = "toggleGroupModifier2"
-        static let toggleGroupKey = "toggleGroupKey"
+        static let toggleGroupModifier = "toggleGroupModifier" // Legacy
+        static let toggleGroupModifier2 = "toggleGroupModifier2" // Legacy
+        static let toggleGroupKey = "toggleGroupKey" // Legacy
+        static let toggleGroupTriggers = "toggleGroupTriggers"
     }
     
-    static let customAppShortcutsData = (try? JSONEncoder().encode([CustomAppShortcut(key: "i", modifier: "option", modifier2: nil, bundleIDs: [""])])) ?? Data()
+    static let customAppShortcutsData = (try? JSONEncoder().encode([
+        CustomAppShortcut(triggers: [ShortcutTrigger(key: "i", modifier: "option")], bundleIDs: [""])
+    ])) ?? Data()
     
     static let defaults: [String: Any] = [
         Keys.copyOnSelect: true,

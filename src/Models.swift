@@ -9,34 +9,52 @@ struct AppColors {
 
 // MARK: - Internal Data Models
 
-struct CustomAppShortcut: Identifiable, Codable, Equatable {
+struct ShortcutTrigger: Identifiable, Codable, Equatable {
     var id = UUID()
     var key: String
     var modifier: String
     var modifier2: String?
-    var bundleIDs: [String]
-    var isEnabled: Bool = true
     
-    init(id: UUID = UUID(), key: String, modifier: String, modifier2: String? = nil, bundleIDs: [String], isEnabled: Bool = true) {
+    init(id: UUID = UUID(), key: String, modifier: String, modifier2: String? = nil) {
         self.id = id
         self.key = key
         self.modifier = modifier
         self.modifier2 = modifier2
+    }
+}
+
+struct CustomAppShortcut: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var triggers: [ShortcutTrigger]
+    var bundleIDs: [String]
+    var isEnabled: Bool = true
+    
+    init(id: UUID = UUID(), triggers: [ShortcutTrigger], bundleIDs: [String], isEnabled: Bool = true) {
+        self.id = id
+        self.triggers = triggers
         self.bundleIDs = bundleIDs
         self.isEnabled = isEnabled
     }
     
     enum CodingKeys: String, CodingKey {
-        case id, key, modifier, modifier2, bundleIDs, bundleID, isEnabled
+        case id, triggers, key, modifier, modifier2, bundleIDs, bundleID, isEnabled
     }
     
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        key = try container.decode(String.self, forKey: .key)
-        modifier = try container.decode(String.self, forKey: .modifier)
-        modifier2 = try container.decodeIfPresent(String.self, forKey: .modifier2)
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        
+        // Backward compatibility: Migrate from single key/mod to array of triggers
+        if let decodedTriggers = try? container.decode([ShortcutTrigger].self, forKey: .triggers) {
+            triggers = decodedTriggers
+        } else if let key = try? container.decode(String.self, forKey: .key),
+                  let mod = try? container.decode(String.self, forKey: .modifier) {
+            let mod2 = try? container.decodeIfPresent(String.self, forKey: .modifier2)
+            triggers = [ShortcutTrigger(key: key, modifier: mod, modifier2: mod2)]
+        } else {
+            triggers = [ShortcutTrigger(key: "", modifier: "command")]
+        }
         
         // Backward compatibility: Handle both new array format and old single string format
         if let ids = try? container.decode([String].self, forKey: .bundleIDs) {
@@ -51,9 +69,7 @@ struct CustomAppShortcut: Identifiable, Codable, Equatable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
-        try container.encode(key, forKey: .key)
-        try container.encode(modifier, forKey: .modifier)
-        try container.encodeIfPresent(modifier2, forKey: .modifier2)
+        try container.encode(triggers, forKey: .triggers)
         try container.encode(bundleIDs, forKey: .bundleIDs)
         try container.encode(isEnabled, forKey: .isEnabled)
     }

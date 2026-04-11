@@ -9,6 +9,9 @@ private var lastUsedShortcutID: UUID?
 
 // Cache for Custom Shortcuts to prevent JSON decoding on every keystroke
 private var cachedCustomShortcuts: [CustomAppShortcut] = []
+private var cachedNextGroupTriggers: [ShortcutTrigger] = []
+private var cachedPrevGroupTriggers: [ShortcutTrigger] = []
+private var cachedToggleGroupTriggers: [ShortcutTrigger] = []
 private var userDefaultsObserver: NSObjectProtocol?
 
 fileprivate func refreshCustomShortcutsCache() {
@@ -18,6 +21,21 @@ fileprivate func refreshCustomShortcutsCache() {
     } else {
         cachedCustomShortcuts = []
     }
+    
+    cachedNextGroupTriggers = loadTriggers(forKey: AppConfig.Keys.nextGroupTriggers, oldMod1: AppConfig.Keys.nextGroupModifier, oldMod2: AppConfig.Keys.nextGroupModifier2, oldKey: AppConfig.Keys.nextGroupKey, defaultKey: ".")
+    cachedPrevGroupTriggers = loadTriggers(forKey: AppConfig.Keys.prevGroupTriggers, oldMod1: AppConfig.Keys.prevGroupModifier, oldMod2: AppConfig.Keys.prevGroupModifier2, oldKey: AppConfig.Keys.prevGroupKey, defaultKey: ",")
+    cachedToggleGroupTriggers = loadTriggers(forKey: AppConfig.Keys.toggleGroupTriggers, oldMod1: AppConfig.Keys.toggleGroupModifier, oldMod2: AppConfig.Keys.toggleGroupModifier2, oldKey: AppConfig.Keys.toggleGroupKey, defaultKey: "/")
+}
+
+fileprivate func loadTriggers(forKey key: String, oldMod1: String, oldMod2: String, oldKey: String, defaultKey: String) ->[ShortcutTrigger] {
+    if let data = UserDefaults.standard.data(forKey: key),
+       let decoded = try? JSONDecoder().decode([ShortcutTrigger].self, from: data), !decoded.isEmpty {
+        return decoded
+    }
+    let m1 = UserDefaults.standard.string(forKey: oldMod1) ?? "right control"
+    let m2 = UserDefaults.standard.string(forKey: oldMod2) ?? "shift"
+    let k = UserDefaults.standard.string(forKey: oldKey) ?? defaultKey
+    return[ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
 }
 
 class KeyboardInterceptor {
@@ -92,7 +110,7 @@ class KeyboardInterceptor {
 // Ultra-fast exact modifier matching, including left/right specific checks
 func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
     var requiredMods = [String]()
-    for m in[mod1, mod2].compactMap({ $0 }).filter({ $0 != "none" && !$0.isEmpty }) {
+    for m in [mod1, mod2].compactMap({ $0 }).filter({ $0 != "none" && !$0.isEmpty }) {
         requiredMods.append(m)
     }
     
@@ -164,6 +182,15 @@ func isGlobalShortcutMatch(type: CGEventType, eventKeyCode: Int64, flags: CGEven
         guard let code = KeyboardInterceptor.getKeyCode(for: keyStr) else { return false }
         return eventKeyCode == Int64(code) && isModifierMatch(flags: flags, mod1: mod1Str, mod2: mod2Str)
     }
+}
+
+func isAnyTriggerMatch(type: CGEventType, eventKeyCode: Int64, flags: CGEventFlags, triggers: [ShortcutTrigger]) -> Bool {
+    for trigger in triggers {
+        if isGlobalShortcutMatch(type: type, eventKeyCode: eventKeyCode, flags: flags, keyStr: trigger.key, mod1Str: trigger.modifier, mod2Str: trigger.modifier2) {
+            return true
+        }
+    }
+    return false
 }
 
 // Helpers for Activation
@@ -379,22 +406,13 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     // --- STAGE 1: LIGHTNING FAST PRE-MATCHING (Zero System Calls) ---
     
     let isNextMatch = defaults.bool(forKey: AppConfig.Keys.enableNextGroupShortcut) &&
-        isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
-                              keyStr: defaults.string(forKey: AppConfig.Keys.nextGroupKey) ?? ".",
-                              mod1Str: defaults.string(forKey: AppConfig.Keys.nextGroupModifier) ?? "right control",
-                              mod2Str: defaults.string(forKey: AppConfig.Keys.nextGroupModifier2) ?? "shift")
+        isAnyTriggerMatch(type: type, eventKeyCode: keyCode, flags: flags, triggers: cachedNextGroupTriggers)
                               
     let isPrevMatch = defaults.bool(forKey: AppConfig.Keys.enablePrevGroupShortcut) &&
-        isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
-                              keyStr: defaults.string(forKey: AppConfig.Keys.prevGroupKey) ?? ",",
-                              mod1Str: defaults.string(forKey: AppConfig.Keys.prevGroupModifier) ?? "right control",
-                              mod2Str: defaults.string(forKey: AppConfig.Keys.prevGroupModifier2) ?? "shift")
+        isAnyTriggerMatch(type: type, eventKeyCode: keyCode, flags: flags, triggers: cachedPrevGroupTriggers)
 
     let isToggleGroupMatch = defaults.bool(forKey: AppConfig.Keys.enableToggleGroupShortcut) &&
-        isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
-                              keyStr: defaults.string(forKey: AppConfig.Keys.toggleGroupKey) ?? "/",
-                              mod1Str: defaults.string(forKey: AppConfig.Keys.toggleGroupModifier) ?? "right control",
-                              mod2Str: defaults.string(forKey: AppConfig.Keys.toggleGroupModifier2) ?? "shift")
+        isAnyTriggerMatch(type: type, eventKeyCode: keyCode, flags: flags, triggers: cachedToggleGroupTriggers)
     
     var matchedCustomShortcut: CustomAppShortcut?
     for shortcut in cachedCustomShortcuts {
@@ -402,7 +420,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
         if validBundleIDs.isEmpty { continue }
         
-        if isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags, keyStr: shortcut.key, mod1Str: shortcut.modifier, mod2Str: shortcut.modifier2) {
+        if isAnyTriggerMatch(type: type, eventKeyCode: keyCode, flags: flags, triggers: shortcut.triggers) {
             matchedCustomShortcut = shortcut
             break
         }

@@ -139,7 +139,12 @@ class KeyboardInterceptor {
         "next_track": 1017,
         "prev_track": 1018,
         "illumination_increment": 1021, "kbd_brightness_up": 1021,
-        "illumination_decrement": 1022, "kbd_brightness_down": 1022
+        "illumination_decrement": 1022, "kbd_brightness_down": 1022,
+        
+        // Virtual KeyCodes for Mouse Buttons
+        "button1": 2001, "left_click": 2001,
+        "button2": 2002, "right_click": 2002,
+        "button3": 2003, "middle_click": 2003
     ]
 
     static func getKeyCode(for char: String) -> CGKeyCode? {
@@ -216,6 +221,33 @@ class KeyboardInterceptor {
         ), let cg = ev.cgEvent {
             cg.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
             cg.post(tap: .cghidEventTap)
+        }
+    }
+    
+    static func postMouseEvent(button: Int32, isDown: Bool) {
+        guard let currentEvent = CGEvent(source: nil) else { return }
+        let loc = currentEvent.location
+        
+        let type: CGEventType
+        let mouseButton: CGMouseButton
+        
+        switch button {
+        case 1:
+            type = isDown ? .leftMouseDown : .leftMouseUp
+            mouseButton = .left
+        case 2:
+            type = isDown ? .rightMouseDown : .rightMouseUp
+            mouseButton = .right
+        case 3:
+            type = isDown ? .otherMouseDown : .otherMouseUp
+            mouseButton = .center
+        default: return
+        }
+        
+        let source = CGEventSource(stateID: .hidSystemState)
+        if let mouseEvent = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: loc, mouseButton: mouseButton) {
+            mouseEvent.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+            mouseEvent.post(tap: .cghidEventTap)
         }
     }
 
@@ -581,7 +613,10 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
         if let mappedTo = activeRemaps[rawKeyCode] {
             activeRemaps.removeValue(forKey: rawKeyCode)
             
-            if mappedTo >= 1000 {
+            if mappedTo >= 2000 {
+                let btn = Int32(mappedTo - 2000)
+                KeyboardInterceptor.postMouseEvent(button: btn, isDown: false)
+            } else if mappedTo >= 1000 {
                 let mediaKey = Int32(mappedTo - 1000)
                 KeyboardInterceptor.postMediaKeyEvent(mediaKey: mediaKey, isDown: false, flags: flags)
             } else if mappedTo != 0 {
@@ -653,7 +688,30 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
             finalFlags.remove([.maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn, .maskNumericPad])
             finalFlags.formUnion(newCoreFlags)
             
-            if map.toKeyCode >= 1000 {
+            if map.toKeyCode >= 2000 {
+                // Map to Mouse Button
+                let btn = Int32(map.toKeyCode - 2000)
+                if isFlagsChanged {
+                    var isPress = false
+                    switch rawKeyCode {
+                    case 56, 60: isPress = originalFlags.contains(.maskShift)
+                    case 59, 62: isPress = originalFlags.contains(.maskControl)
+                    case 58, 61: isPress = originalFlags.contains(.maskAlternate)
+                    case 55, 54: isPress = originalFlags.contains(.maskCommand)
+                    case 57: isPress = true // CapsLock toggle triggers full press
+                    default: break
+                    }
+                    if isPress {
+                        KeyboardInterceptor.postMouseEvent(button: btn, isDown: true)
+                        KeyboardInterceptor.postMouseEvent(button: btn, isDown: false)
+                    }
+                    return true
+                } else {
+                    activeRemaps[rawKeyCode] = map.toKeyCode
+                    KeyboardInterceptor.postMouseEvent(button: btn, isDown: true)
+                    return true
+                }
+            } else if map.toKeyCode >= 1000 {
                 // Map to a Media Key (Volume/Brightness)
                 let mediaKey = Int32(map.toKeyCode - 1000)
                 if isFlagsChanged {
@@ -663,6 +721,7 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                     case 59, 62: isPress = originalFlags.contains(.maskControl)
                     case 58, 61: isPress = originalFlags.contains(.maskAlternate)
                     case 55, 54: isPress = originalFlags.contains(.maskCommand)
+                    case 57: isPress = true // CapsLock
                     default: break
                     }
                     if isPress {
@@ -701,24 +760,32 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                 
                 if isFlagsChanged {
                     var isPress = false
+                    var isCapsLock = false
                     switch rawKeyCode {
                     case 56, 60: isPress = originalFlags.contains(.maskShift)
                     case 59, 62: isPress = originalFlags.contains(.maskControl)
                     case 58, 61: isPress = originalFlags.contains(.maskAlternate)
                     case 55, 54: isPress = originalFlags.contains(.maskCommand)
+                    case 57: 
+                        isPress = true // CapsLock
+                        isCapsLock = true
                     default: break
                     }
                     
                     if isPress {
                         let source = CGEventSource(stateID: .hidSystemState)
-                        if let down = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: true),
-                           let up = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: false) {
+                        if let down = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: true) {
                             down.flags = finalFlags
-                            up.flags = finalFlags
                             down.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
-                            up.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
                             down.post(tap: .cghidEventTap)
-                            up.post(tap: .cghidEventTap)
+                        }
+                        // CapsLock doesn't naturally send an "Up" flagsChanged event. We must auto-release.
+                        if isCapsLock {
+                            if let up = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: false) {
+                                up.flags = finalFlags
+                                up.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                                up.post(tap: .cghidEventTap)
+                            }
                         }
                     }
                     return true
@@ -728,6 +795,7 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                     if let newEvent = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: true) {
                         newEvent.flags = finalFlags
                         newEvent.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                        // Post to .cghidEventTap so that it triggers System Hotkeys (like Alt+Tab, Cmd+Space) reliably
                         newEvent.post(tap: .cghidEventTap)
                     }
                     return true

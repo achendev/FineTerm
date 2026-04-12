@@ -106,7 +106,8 @@ struct AppConfig {
             KeyMap(from: "ctrl + f", to: "cmd + f"),
             KeyMap(from: "ctrl + g", to: "cmd + g"),
             KeyMap(from: "ctrl + d", to: "cmd + d"),
-            KeyMap(from: "ctrl + r", to: "cmd + r")
+            KeyMap(from: "ctrl + r", to: "cmd + r"),
+            KeyMap(from: "ctrl + slash", to: "cmd + slash")
         ], appFilterMode: .exclude, appBundleIDs: standardExcludeList),
         PCModeRule(name: "Browser Shortcuts", isEnabled: false, mappings: [
             KeyMap(from: "ctrl + equal_sign", to: "cmd + equal_sign"),
@@ -136,7 +137,6 @@ struct AppConfig {
             KeyMap(from: "cmd + f12", to: "shift + opt + volume_increment"),
             KeyMap(from: "cmd + f1", to: "shift + opt + display_brightness_decrement"),
             KeyMap(from: "cmd + f2", to: "shift + opt + display_brightness_increment"),
-            KeyMap(from: "ctrl + slash", to: "cmd + slash"),
             KeyMap(from: "ctrl + shift + m", to: "cmd + shift + m")
         ]),
         PCModeRule(name: "Tabs Management", isEnabled: false, mappings: [

@@ -4,6 +4,7 @@ import Cocoa
 enum SettingsTab: String, CaseIterable {
     case connections = "Connections"
     case apps = "Apps"
+    case pcmode = "PC Mode"
     case clipboard = "Clipboard"
     case terminal = "Terminal"
     case advanced = "Advanced"
@@ -53,6 +54,7 @@ struct SettingsView: View {
             Picker("", selection: $selectedTab) {
                 Text("Connections").tag(SettingsTab.connections)
                 Text("Apps").tag(SettingsTab.apps)
+                Text("PC Mode").tag(SettingsTab.pcmode)
                 Text("Clipboard").tag(SettingsTab.clipboard)
                 Text("Terminal").tag(SettingsTab.terminal)
                 Text("Advanced").tag(SettingsTab.advanced)
@@ -62,7 +64,7 @@ struct SettingsView: View {
             .padding(.top, 16)
             .padding(.bottom, 12)
             .onChange(of: selectedTab) { tab in
-                if tab == .apps {
+                if tab == .apps || tab == .pcmode {
                     AppListService.shared.loadApps(forceReload: true)
                 }
             }
@@ -75,6 +77,8 @@ struct SettingsView: View {
                     ConnectionsSettingsTab()
                 case .apps:
                     AppShortcutsSettingsTab()
+                case .pcmode:
+                    PCModeSettingsTab()
                 case .clipboard:
                     ClipboardSettingsTab(clipboardStore: clipboardStore)
                 case .terminal:
@@ -85,6 +89,6 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 550, minHeight: 450)
+        .frame(minWidth: 600, minHeight: 450)
     }
 }

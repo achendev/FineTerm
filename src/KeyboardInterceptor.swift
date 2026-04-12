@@ -3,12 +3,25 @@ import ApplicationServices
 
 private var globalKeyboardEventTap: CFMachPort?
 
-// State for the Origin Loop (Origin -> FineTerm -> Terminal -> Origin)
 private var savedOriginBundleID: String?
 private var lastUsedShortcutID: UUID?
 
-// Cache for Custom Shortcuts to prevent JSON decoding on every keystroke
+// Optimized Cache Structures
+struct ParsedKeyMap {
+    let original: KeyMap
+    let fromKeyCode: CGKeyCode
+    let fromCoreFlags: CGEventFlags
+    let toKeyCode: CGKeyCode
+    let toCoreFlags: CGEventFlags
+}
+
+struct ParsedPCModeRule {
+    let rule: PCModeRule
+    let mappings: [ParsedKeyMap]
+}
+
 private var cachedCustomShortcuts: [CustomAppShortcut] = []
+private var cachedParsedPCRules: [ParsedPCModeRule] = []
 private var cachedNextGroupTriggers: [ShortcutTrigger] = []
 private var cachedPrevGroupTriggers: [ShortcutTrigger] = []
 private var cachedToggleGroupTriggers: [ShortcutTrigger] = []
@@ -20,6 +33,38 @@ fileprivate func refreshCustomShortcutsCache() {
         cachedCustomShortcuts = shortcuts
     } else {
         cachedCustomShortcuts = []
+    }
+    
+    cachedParsedPCRules = []
+    if let data = UserDefaults.standard.data(forKey: AppConfig.Keys.pcModeRules),
+       let rules = try? JSONDecoder().decode([PCModeRule].self, from: data) {
+        
+        for rule in rules where rule.isEnabled {
+            var parsedMappings: [ParsedKeyMap] = []
+            for map in rule.mappings {
+                let fromParsed = KeyboardInterceptor.parseKeyString(map.from)
+                guard !fromParsed.key.isEmpty else { continue }
+                guard let fromCode = KeyboardInterceptor.getKeyCode(for: fromParsed.key) else { continue }
+                
+                let toParsed = KeyboardInterceptor.parseKeyString(map.to)
+                guard !toParsed.key.isEmpty else { continue }
+                
+                var toCode: CGKeyCode = 0
+                if !toParsed.key.lowercased().hasPrefix("shell:") {
+                    guard let c = KeyboardInterceptor.getKeyCode(for: toParsed.key) else { continue }
+                    toCode = c
+                }
+                
+                let fromFlags = KeyboardInterceptor.parseModifiers(fromParsed.modifiers)
+                let toFlags = KeyboardInterceptor.parseModifiers(toParsed.modifiers)
+                
+                parsedMappings.append(ParsedKeyMap(original: map, fromKeyCode: fromCode, fromCoreFlags: fromFlags, toKeyCode: toCode, toCoreFlags: toFlags))
+            }
+            
+            // Sort by most specific modifiers first (e.g. Ctrl+Shift matches before Ctrl)
+            parsedMappings.sort { $0.fromCoreFlags.rawValue.nonzeroBitCount > $1.fromCoreFlags.rawValue.nonzeroBitCount }
+            cachedParsedPCRules.append(ParsedPCModeRule(rule: rule, mappings: parsedMappings))
+        }
     }
     
     cachedNextGroupTriggers = loadTriggers(forKey: AppConfig.Keys.nextGroupTriggers, oldMod1: AppConfig.Keys.nextGroupModifier, oldMod2: AppConfig.Keys.nextGroupModifier2, oldKey: AppConfig.Keys.nextGroupKey, defaultKey: ".")
@@ -42,14 +87,25 @@ class KeyboardInterceptor {
     var eventTap: CFMachPort?
     var runLoopSource: CFRunLoopSource?
 
+    static let specialKeyCodes: [String: CGKeyCode] = [
+        "esc": 53, "escape": 53, "tab": 48, "space": 49, "spacebar": 49,
+        "enter": 36, "return": 36, "capslock": 57, "caps_lock": 57,
+        "left_arrow": 123, "right_arrow": 124, "down_arrow": 125, "up_arrow": 126,
+        "home": 115, "end": 119, "page_up": 116, "page_down": 121,
+        "delete_or_backspace": 51, "delete_forward": 117, "insert": 114,
+        "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
+        "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
+        "hyphen": 27, "equal_sign": 24, "slash": 44, "backslash": 42,
+        "left_shift": 56, "right_shift": 60, "left_control": 59, "right_control": 62,
+        "left_option": 58, "right_option": 61, "left_command": 55, "right_command": 54,
+        "volume_decrement": 73, "volume_increment": 72, "display_brightness_decrement": 145, "display_brightness_increment": 144
+    ]
+
     static func getKeyCode(for char: String) -> CGKeyCode? {
         let lower = char.lowercased().trimmingCharacters(in: .whitespaces)
+        if let code = specialKeyCodes[lower] { return code }
+        
         switch lower {
-            case "esc", "escape": return 53
-            case "tab": return 48
-            case "space": return 49
-            case "enter", "return": return 36
-            case "capslock", "caps lock": return 57
             case "a": return 0; case "s": return 1; case "d": return 2; case "f": return 3; case "h": return 4
             case "g": return 5; case "z": return 6; case "x": return 7; case "c": return 8; case "v": return 9
             case "b": return 11; case "q": return 12; case "w": return 13; case "e": return 14; case "r": return 15
@@ -62,6 +118,42 @@ class KeyboardInterceptor {
             case ".": return 47; default: return nil
         }
     }
+    
+    static func parseKeyString(_ input: String) -> (modifiers: [String], key: String) {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasPrefix("shell:") {
+            return ([], trimmed)
+        }
+        
+        let rawParts = input.components(separatedBy: "+")
+        let parts = rawParts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty }
+        
+        guard !parts.isEmpty else { return ([], "") }
+        
+        var mods: [String] = []
+        let key = parts.last!
+        
+        if parts.count > 1 {
+            for i in 0..<(parts.count - 1) {
+                var mod = parts[i]
+                if mod == "cmd" || mod == "command" { mod = "command" }
+                else if mod == "ctrl" || mod == "control" { mod = "control" }
+                else if mod == "opt" || mod == "alt" || mod == "option" { mod = "option" }
+                else if mod == "shift" { mod = "shift" }
+                mods.append(mod)
+            }
+        }
+        return (mods, key)
+    }
+
+    static func parseModifiers(_ mods: [String]) -> CGEventFlags {
+        var flags: CGEventFlags = []
+        if mods.contains("command") { flags.insert(.maskCommand) }
+        if mods.contains("control") { flags.insert(.maskControl) }
+        if mods.contains("option") { flags.insert(.maskAlternate) }
+        if mods.contains("shift") { flags.insert(.maskShift) }
+        return flags
+    }
 
     func start() {
         refreshCustomShortcutsCache()
@@ -69,7 +161,7 @@ class KeyboardInterceptor {
             refreshCustomShortcutsCache()
         }
         
-        let eventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
+        let eventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -107,34 +199,19 @@ class KeyboardInterceptor {
     }
 }
 
-// Ultra-fast exact modifier matching, including left/right specific checks
-func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
-    var requiredMods = [String]()
-    for m in [mod1, mod2].compactMap({ $0 }).filter({ $0 != "none" && !$0.isEmpty }) {
-        requiredMods.append(m)
-    }
-    
+func isExactModifierMatch(flags: CGEventFlags, required: [String]) -> Bool {
     let hasCmd = flags.contains(.maskCommand)
     let hasCtrl = flags.contains(.maskControl)
     let hasOpt = flags.contains(.maskAlternate)
     let hasShift = flags.contains(.maskShift)
     
-    let needsCmd = requiredMods.contains(where: { $0.contains("command") })
-    let needsCtrl = requiredMods.contains(where: { $0.contains("control") })
-    let needsOpt = requiredMods.contains(where: { $0.contains("option") })
-    let needsShift = requiredMods.contains(where: { $0.contains("shift") })
-    let needsCaps = requiredMods.contains("capslock")
+    let reqCmd = required.contains(where: { $0.contains("command") })
+    let reqCtrl = required.contains(where: { $0.contains("control") })
+    let reqOpt = required.contains(where: { $0.contains("option") })
+    let reqShift = required.contains(where: { $0.contains("shift") })
     
-    // Core Modifiers category must match perfectly
-    if hasCmd != needsCmd || hasCtrl != needsCtrl || hasOpt != needsOpt || hasShift != needsShift {
-        return false
-    }
+    if reqCmd != hasCmd || reqCtrl != hasCtrl || reqOpt != hasOpt || reqShift != hasShift { return false }
     
-    if needsCaps && !flags.contains(.maskAlphaShift) {
-        return false
-    }
-    
-    // CoreGraphics raw values for precise Left/Right hardware matching
     let raw = flags.rawValue
     let leftCtrl = (raw & 0x01) != 0
     let leftShift = (raw & 0x02) != 0
@@ -145,21 +222,19 @@ func isModifierMatch(flags: CGEventFlags, mod1: String, mod2: String?) -> Bool {
     let rightOpt = (raw & 0x40) != 0
     let rightCtrl = (raw & 0x2000) != 0
     
-    // Enforce left/right strictly if requested
-    for req in requiredMods {
+    for req in required {
         switch req {
-        case "left command": if !leftCmd { return false }
-        case "right command": if !rightCmd { return false }
-        case "left control": if !leftCtrl { return false }
-        case "right control": if !rightCtrl { return false }
-        case "left option": if !leftOpt { return false }
-        case "right option": if !rightOpt { return false }
-        case "left shift": if !leftShift { return false }
-        case "right shift": if !rightShift { return false }
+        case "left_command": if !leftCmd { return false }
+        case "right_command": if !rightCmd { return false }
+        case "left_control": if !leftCtrl { return false }
+        case "right_control": if !rightCtrl { return false }
+        case "left_option": if !leftOpt { return false }
+        case "right_option": if !rightOpt { return false }
+        case "left_shift": if !leftShift { return false }
+        case "right_shift": if !rightShift { return false }
         default: break
         }
     }
-    
     return true
 }
 
@@ -167,20 +242,17 @@ func isGlobalShortcutMatch(type: CGEventType, eventKeyCode: Int64, flags: CGEven
     if keyStr.isEmpty {
         let m1 = mod1Str
         let m2 = mod2Str ?? "none"
-        
         if m1 == "none" && m2 == "none" { return false }
-        
         if m1 == "none" || m2 == "none" {
             let activeMod = m1 != "none" ? m1 : m2
             let isSpecific = activeMod.hasPrefix("left ") || activeMod.hasPrefix("right ")
-            if !isSpecific { return false } // Block single-modifier pure shortcuts unless they are specific left/right
+            if !isSpecific { return false }
         }
-        
-        return type == .flagsChanged && isModifierMatch(flags: flags, mod1: m1, mod2: m2)
+        return type == .flagsChanged && isExactModifierMatch(flags: flags, required: [m1.replacingOccurrences(of: " ", with: "_"), m2.replacingOccurrences(of: " ", with: "_")])
     } else {
         if type != .keyDown { return false }
         guard let code = KeyboardInterceptor.getKeyCode(for: keyStr) else { return false }
-        return eventKeyCode == Int64(code) && isModifierMatch(flags: flags, mod1: mod1Str, mod2: mod2Str)
+        return eventKeyCode == Int64(code) && isExactModifierMatch(flags: flags, required: [mod1Str.replacingOccurrences(of: " ", with: "_"), (mod2Str ?? "none").replacingOccurrences(of: " ", with: "_")])
     }
 }
 
@@ -193,7 +265,6 @@ func isAnyTriggerMatch(type: CGEventType, eventKeyCode: Int64, flags: CGEventFla
     return false
 }
 
-// Helpers for Activation
 func activateApp(bundleID: String) {
     let workspace = NSWorkspace.shared
     guard let url = workspace.urlForApplication(withBundleIdentifier: bundleID) else { return }
@@ -240,10 +311,8 @@ struct CycleWindow {
     let isFocused: Bool
 }
 
-// Stable Round-Robin Cycling Engine
 func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApplication?) {
     let frontID = frontApp?.bundleIdentifier ?? ""
-    let isDebug = UserDefaults.standard.bool(forKey: AppConfig.Keys.debugMode)
     let skipNonRunning = UserDefaults.standard.bool(forKey: AppConfig.Keys.skipNonRunningApps)
     
     let workspace = NSWorkspace.shared
@@ -259,7 +328,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
     
     if !effectiveBundleIDs.contains(frontID) {
         let targetAppID = AppFocusTracker.shared.getMostRecent(from: effectiveBundleIDs) ?? effectiveBundleIDs[0]
-        if isDebug { print("DEBUG: Switching from outside to most recent in group: \(targetAppID)") }
         activateApp(bundleID: targetAppID)
         return
     }
@@ -309,9 +377,7 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
                            if size.width < 100 || size.height < 100 { continue }
                            frame = CGRect(origin: pos, size: size)
                        }
-                    } else {
-                        continue
-                    }
+                    } else { continue }
                     
                     var titleRef: CFTypeRef?
                     AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
@@ -320,9 +386,7 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
                     var isMain = false
                     var mainRef: CFTypeRef?
                     if AXUIElementCopyAttributeValue(window, kAXMainAttribute as CFString, &mainRef) == .success,
-                       let m = mainRef as? NSNumber, m.boolValue {
-                        isMain = true
-                    }
+                       let m = mainRef as? NSNumber, m.boolValue { isMain = true }
                     
                     let isFocused = (frontApp?.processIdentifier == pid) && 
                                     ((focusedWindow != nil && CFEqual(window, focusedWindow!)) || isMain)
@@ -437,28 +501,130 @@ func getRealFrontmostApp() -> NSRunningApplication? {
     return workspaceApp
 }
 
+func applyPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags: CGEventFlags, frontAppID: String) -> CGEvent? {
+    let isFlagsChanged = (type == .flagsChanged)
+    let rawKeyCode = keyCode
+    let originalFlags = flags
+    
+    for parsedRule in cachedParsedPCRules {
+        if parsedRule.rule.appFilterMode == .include && !parsedRule.rule.appBundleIDs.contains(frontAppID) { continue }
+        if parsedRule.rule.appFilterMode == .exclude && parsedRule.rule.appBundleIDs.contains(frontAppID) { continue }
+        
+        for map in parsedRule.mappings {
+            if map.fromKeyCode != rawKeyCode { continue }
+            
+            var cleanEventFlags = originalFlags
+            if isFlagsChanged {
+                switch rawKeyCode {
+                case 56, 60: cleanEventFlags.remove(.maskShift)
+                case 59, 62: cleanEventFlags.remove(.maskControl)
+                case 58, 61: cleanEventFlags.remove(.maskAlternate)
+                case 55, 54: cleanEventFlags.remove(.maskCommand)
+                default: break
+                }
+            }
+            
+            let coreEventFlags = cleanEventFlags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+            
+            // Allow extra modifiers to pass through (e.g. Ctrl+Shift+Left matches Ctrl+Left)
+            if !coreEventFlags.isSuperset(of: map.fromCoreFlags) { continue }
+            
+            // Handle shell commands
+            if map.toKeyCode == 0 && map.original.to.lowercased().hasPrefix("shell:") {
+                if !isFlagsChanged && type == .keyDown {
+                    let cmdStartIndex = map.original.to.index(map.original.to.startIndex, offsetBy: 6)
+                    let cmd = String(map.original.to[cmdStartIndex...]).trimmingCharacters(in: .whitespaces)
+                    let task = Process()
+                    task.launchPath = "/bin/sh"
+                    task.arguments = ["-c", cmd]
+                    try? task.run()
+                }
+                return nil // Swallow event entirely
+            }
+            
+            let extraFlags = coreEventFlags.subtracting(map.fromCoreFlags)
+            var newCoreFlags = map.toCoreFlags
+            newCoreFlags.formUnion(extraFlags)
+            
+            var finalFlags = originalFlags
+            finalFlags.remove([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+            finalFlags.formUnion(newCoreFlags)
+            
+            let navKeys: Set<CGKeyCode> = [115, 119, 116, 121, 123, 124, 125, 126, 117]
+            if navKeys.contains(map.toKeyCode) {
+                finalFlags.insert(.maskNumericPad)
+                finalFlags.insert(.maskSecondaryFn)
+            }
+            
+            if isFlagsChanged {
+                var isPress = false
+                switch rawKeyCode {
+                case 56, 60: isPress = originalFlags.contains(.maskShift)
+                case 59, 62: isPress = originalFlags.contains(.maskControl)
+                case 58, 61: isPress = originalFlags.contains(.maskAlternate)
+                case 55, 54: isPress = originalFlags.contains(.maskCommand)
+                default: break
+                }
+                
+                if isPress {
+                    let source = CGEventSource(stateID: .hidSystemState)
+                    if let down = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: true),
+                       let up = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: false) {
+                        down.flags = finalFlags
+                        up.flags = finalFlags
+                        down.post(tap: .cghidEventTap)
+                        up.post(tap: .cghidEventTap)
+                    }
+                }
+                return event 
+            } else {
+                event.setIntegerValueField(.keyboardEventKeycode, value: Int64(map.toKeyCode))
+                event.flags = finalFlags
+                return event
+            }
+        }
+    }
+    return nil
+}
+
 func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         if let tap = globalKeyboardEventTap { CGEvent.tapEnable(tap: tap, enable: true) }
         return Unmanaged.passUnretained(event)
     }
     
-    guard type == .keyDown || type == .flagsChanged else { return Unmanaged.passUnretained(event) }
+    // --- STAGE 0: PC MODE REMAPPING ---
+    let isKeyDownOrUp = type == .keyDown || type == .keyUp || type == .flagsChanged
+    var finalEvent = event
+    var keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+    var flags = event.flags
+    let typeToProcess = type
     
-    let flags = event.flags
-    let keyCode = type == .keyDown ? event.getIntegerValueField(.keyboardEventKeycode) : -1
+    let frontApp = getRealFrontmostApp()
+    
+    if isKeyDownOrUp {
+        let frontAppID = frontApp?.bundleIdentifier ?? ""
+        if let remapped = applyPCModeRules(event: event, type: type, keyCode: keyCode, flags: flags, frontAppID: frontAppID) {
+            finalEvent = remapped
+            keyCode = remapped.getIntegerValueField(.keyboardEventKeycode)
+            flags = remapped.flags
+        }
+    }
+    
+    guard typeToProcess == .keyDown || typeToProcess == .flagsChanged else {
+        return Unmanaged.passUnretained(finalEvent)
+    }
+    
     let defaults = UserDefaults.standard
     
-    // --- STAGE 1: LIGHTNING FAST PRE-MATCHING (Zero System Calls) ---
-    
     let isNextMatch = defaults.bool(forKey: AppConfig.Keys.enableNextGroupShortcut) &&
-        isAnyTriggerMatch(type: type, eventKeyCode: keyCode, flags: flags, triggers: cachedNextGroupTriggers)
+        isAnyTriggerMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags, triggers: cachedNextGroupTriggers)
                               
     let isPrevMatch = defaults.bool(forKey: AppConfig.Keys.enablePrevGroupShortcut) &&
-        isAnyTriggerMatch(type: type, eventKeyCode: keyCode, flags: flags, triggers: cachedPrevGroupTriggers)
+        isAnyTriggerMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags, triggers: cachedPrevGroupTriggers)
 
     let isToggleGroupMatch = defaults.bool(forKey: AppConfig.Keys.enableToggleGroupShortcut) &&
-        isAnyTriggerMatch(type: type, eventKeyCode: keyCode, flags: flags, triggers: cachedToggleGroupTriggers)
+        isAnyTriggerMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags, triggers: cachedToggleGroupTriggers)
     
     var matchedCustomShortcut: CustomAppShortcut?
     for shortcut in cachedCustomShortcuts {
@@ -466,55 +632,47 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
         if validBundleIDs.isEmpty { continue }
         
-        if isAnyTriggerMatch(type: type, eventKeyCode: keyCode, flags: flags, triggers: shortcut.triggers) {
+        if isAnyTriggerMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags, triggers: shortcut.triggers) {
             matchedCustomShortcut = shortcut
             break
         }
     }
     
-    let isMainMatch = isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
+    let isMainMatch = isGlobalShortcutMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags,
                                             keyStr: defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n",
                                             mod1Str: defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command",
                                             mod2Str: nil)
                                             
     let isToggleMatch = defaults.bool(forKey: AppConfig.Keys.enableTerminalToggleShortcut) &&
-                        isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
+                        isGlobalShortcutMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags,
                                             keyStr: defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutKey) ?? "h",
                                             mod1Str: defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutModifier) ?? "command",
                                             mod2Str: nil)
                                             
     let isClipMatch = defaults.bool(forKey: AppConfig.Keys.enableClipboardManager) &&
-                      isGlobalShortcutMatch(type: type, eventKeyCode: keyCode, flags: flags,
+                      isGlobalShortcutMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags,
                                             keyStr: defaults.string(forKey: AppConfig.Keys.clipboardShortcutKey) ?? "u",
                                             mod1Str: defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command",
                                             mod2Str: nil)
     
-    // EARLY EXIT
     if !isNextMatch && !isPrevMatch && !isToggleGroupMatch && matchedCustomShortcut == nil && !isMainMatch && !isToggleMatch && !isClipMatch {
-        return Unmanaged.passUnretained(event)
+        return Unmanaged.passUnretained(finalEvent)
     }
     
-    // --- STAGE 2: MATCH CONFIRMED, FETCH SYSTEM STATE ---
-    let frontApp = getRealFrontmostApp()
-    
-    // Execute Group Navigation
     if isNextMatch || isPrevMatch || isToggleGroupMatch {
         let validShortcuts = cachedCustomShortcuts.filter { $0.isEnabled && $0.bundleIDs.contains(where: { !$0.isEmpty }) }
         if !validShortcuts.isEmpty {
             var target: CustomAppShortcut?
             var currentIdx = -1
             
-            // 1. Check if frontmost app belongs to ANY group
             if let frontID = frontApp?.bundleIdentifier {
                 currentIdx = validShortcuts.firstIndex(where: { $0.bundleIDs.contains(frontID) }) ?? -1
             }
             
-            // 2. Fallback to last remembered group if outside a bound app
             if currentIdx == -1 {
                 currentIdx = validShortcuts.firstIndex(where: { $0.id == lastUsedShortcutID }) ?? -1
             }
             
-            // 3. Navigate Direction
             if isNextMatch {
                 let nextIdx = (currentIdx + 1) % validShortcuts.count
                 target = validShortcuts[nextIdx]
@@ -532,20 +690,18 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
                 DispatchQueue.main.async { executeCustomShortcutCycle(validBundleIDs: t.bundleIDs.filter({!$0.isEmpty}), frontApp: frontApp) }
             }
         }
-        return type == .keyDown ? nil : Unmanaged.passUnretained(event)
+        return typeToProcess == .keyDown ? nil : Unmanaged.passUnretained(finalEvent)
     }
     
-    // Execute Specific Custom Shortcut
     if let shortcut = matchedCustomShortcut {
         lastUsedShortcutID = shortcut.id
         let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
         DispatchQueue.main.async {
             executeCustomShortcutCycle(validBundleIDs: validBundleIDs, frontApp: frontApp)
         }
-        return type == .keyDown ? nil : Unmanaged.passUnretained(event)
+        return typeToProcess == .keyDown ? nil : Unmanaged.passUnretained(finalEvent)
     }
     
-    // Execute Main Shortcut Loop
     let target = defaults.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
     let isTerminalFront = frontApp?.bundleIdentifier == target
     let isFineTermFront = NSRunningApplication.current.isActive
@@ -555,11 +711,11 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         let secondActivation = defaults.bool(forKey: AppConfig.Keys.secondActivationToTerminal)
         let thirdActivation = defaults.bool(forKey: AppConfig.Keys.thirdActivationToOrigin)
         
-        if !mainAnywhere && !isTerminalFront && !isFineTermFront { return Unmanaged.passUnretained(event) }
+        if !mainAnywhere && !isTerminalFront && !isFineTermFront { return Unmanaged.passUnretained(finalEvent) }
         
         if isFineTermFront {
             if secondActivation { activateTerminal(); return nil }
-            return Unmanaged.passUnretained(event)
+            return Unmanaged.passUnretained(finalEvent)
         }
         
         if isTerminalFront {
@@ -586,7 +742,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
                 DispatchQueue.main.async { activateApp(bundleID: originID) }
                 return nil
             }
-            return Unmanaged.passUnretained(event)
+            return Unmanaged.passUnretained(finalEvent)
         } else {
             if !isFineTermFront, let app = frontApp, let bundleID = app.bundleIdentifier, bundleID != target, bundleID != Bundle.main.bundleIdentifier {
                 savedOriginBundleID = bundleID
@@ -603,5 +759,5 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return nil
     }
     
-    return Unmanaged.passUnretained(event)
+    return Unmanaged.passUnretained(finalEvent)
 }

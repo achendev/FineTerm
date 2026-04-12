@@ -3,7 +3,6 @@ import UniformTypeIdentifiers
 
 // MARK: - Constants
 struct AppColors {
-    // Custom Color #0A3069 (Red: 10, Green: 48, Blue: 105)
     static let activeHighlight = Color(red: 10/255.0, green: 48/255.0, blue: 105/255.0)
 }
 
@@ -45,7 +44,6 @@ struct CustomAppShortcut: Identifiable, Codable, Equatable {
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         
-        // Backward compatibility: Migrate from single key/mod to array of triggers
         if let decodedTriggers = try? container.decode([ShortcutTrigger].self, forKey: .triggers) {
             triggers = decodedTriggers
         } else if let key = try? container.decode(String.self, forKey: .key),
@@ -56,7 +54,6 @@ struct CustomAppShortcut: Identifiable, Codable, Equatable {
             triggers = [ShortcutTrigger(key: "", modifier: "command")]
         }
         
-        // Backward compatibility: Handle both new array format and old single string format
         if let ids = try? container.decode([String].self, forKey: .bundleIDs) {
             bundleIDs = ids
         } else if let single = try? container.decode(String.self, forKey: .bundleID) {
@@ -75,6 +72,77 @@ struct CustomAppShortcut: Identifiable, Codable, Equatable {
     }
 }
 
+enum AppFilterMode: String, Codable, CaseIterable {
+    case none = "All Apps"
+    case include = "Include Only"
+    case exclude = "Exclude"
+}
+
+struct KeyMap: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var from: String
+    var to: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id, from, to
+        case fromKey, fromModifiers, toKey, toModifiers
+    }
+    
+    init(id: UUID = UUID(), from: String, to: String) {
+        self.id = id
+        self.from = from
+        self.to = to
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        
+        if let f = try? container.decode(String.self, forKey: .from),
+           let t = try? container.decode(String.self, forKey: .to) {
+            from = f
+            to = t
+        } else if let fKey = try? container.decode(String.self, forKey: .fromKey),
+                  let fMods = try? container.decode([String].self, forKey: .fromModifiers),
+                  let tKey = try? container.decode(String.self, forKey: .toKey),
+                  let tMods = try? container.decode([String].self, forKey: .toModifiers) {
+            // Backward compatibility
+            let fromString = (fMods + [fKey]).joined(separator: " + ")
+            let toString = (tMods + [tKey]).joined(separator: " + ")
+            from = fromString
+            to = toString
+        } else {
+            from = ""
+            to = ""
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(from, forKey: .from)
+        try container.encode(to, forKey: .to)
+    }
+}
+
+struct PCModeRule: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var name: String
+    var isEnabled: Bool = false
+    var mappings: [KeyMap] = []
+    var appFilterMode: AppFilterMode = .none
+    var appBundleIDs: [String] = []
+    
+    init(id: UUID = UUID(), name: String, isEnabled: Bool = false, mappings: [KeyMap] = [], appFilterMode: AppFilterMode = .none, appBundleIDs: [String] = []) {
+        self.id = id
+        self.name = name
+        self.isEnabled = isEnabled
+        self.mappings = mappings
+        self.appFilterMode = appFilterMode
+        self.appBundleIDs = appBundleIDs
+    }
+}
+
 struct ConnectionGroup: Identifiable, Codable {
     var id = UUID()
     var name: String
@@ -89,7 +157,7 @@ struct Connection: Identifiable, Codable {
     var usePrefix: Bool
     var useSuffix: Bool
     var setTabName: Bool
-    var lastUsed: Date? // Timestamp for sorting
+    var lastUsed: Date?
     
     init(groupID: UUID? = nil, name: String, command: String, usePrefix: Bool = true, useSuffix: Bool = true, setTabName: Bool = true, lastUsed: Date? = nil) {
         self.id = UUID()
@@ -100,34 +168,6 @@ struct Connection: Identifiable, Codable {
         self.useSuffix = useSuffix
         self.setTabName = setTabName
         self.lastUsed = lastUsed
-    }
-    
-    enum CodingKeys: String, CodingKey {
-        case id, groupID, name, command, usePrefix, useSuffix, setTabName, lastUsed
-    }
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        groupID = try container.decodeIfPresent(UUID.self, forKey: .groupID)
-        name = try container.decode(String.self, forKey: .name)
-        command = try container.decode(String.self, forKey: .command)
-        usePrefix = try container.decodeIfPresent(Bool.self, forKey: .usePrefix) ?? true
-        useSuffix = try container.decodeIfPresent(Bool.self, forKey: .useSuffix) ?? true
-        setTabName = try container.decodeIfPresent(Bool.self, forKey: .setTabName) ?? true
-        lastUsed = try container.decodeIfPresent(Date.self, forKey: .lastUsed)
-    }
-    
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(groupID, forKey: .groupID)
-        try container.encode(name, forKey: .name)
-        try container.encode(command, forKey: .command)
-        try container.encode(usePrefix, forKey: .usePrefix)
-        try container.encode(useSuffix, forKey: .useSuffix)
-        try container.encode(setTabName, forKey: .setTabName)
-        try container.encode(lastUsed, forKey: .lastUsed)
     }
 }
 
@@ -142,35 +182,12 @@ struct ClipboardItem: Identifiable, Codable {
     var timestamp: Date
     var type: ClipboardType = .text
     var thumbnailData: Data? = nil
-    
-    enum CodingKeys: String, CodingKey {
-        case id, content, timestamp, type, thumbnailData
-    }
-    
-    init(id: UUID = UUID(), content: String, timestamp: Date, type: ClipboardType = .text, thumbnailData: Data? = nil) {
-        self.id = id
-        self.content = content
-        self.timestamp = timestamp
-        self.type = type
-        self.thumbnailData = thumbnailData
-    }
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        content = try container.decode(String.self, forKey: .content)
-        timestamp = try container.decode(Date.self, forKey: .timestamp)
-        type = try container.decodeIfPresent(ClipboardType.self, forKey: .type) ?? .text
-        thumbnailData = try container.decodeIfPresent(Data.self, forKey: .thumbnailData)
-    }
 }
 
 struct StoreData: Codable {
     var groups: [ConnectionGroup]
     var connections: [Connection]
 }
-
-// MARK: - Export/Import Models
 
 struct ExportGroup: Codable {
     var name: String

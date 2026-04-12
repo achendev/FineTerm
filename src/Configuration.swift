@@ -34,44 +34,125 @@ struct AppConfig {
         static let clipboardHistorySize = "clipboardHistorySize"
         static let clipboardMaxImages = "clipboardMaxImages"
         
-        // Text Editor Integration
         static let clipboardShiftEnterToEditor = "clipboardShiftEnterToEditor"
         static let clipboardEditorBundleID = "clipboardEditorBundleID"
         static let clipboardTempExtension = "clipboardTempExtension"
         static let clipboardAutoDeleteTempFile = "clipboardAutoDeleteTempFile"
         static let clipboardAutoDeleteDelay = "clipboardAutoDeleteDelay"
         
-        // Storage Limits
         static let clipboardItemSizeLimitKB = "clipboardItemSizeLimitKB" 
         static let clipboardLargeItemSizeLimitMB = "clipboardLargeItemSizeLimitMB"
         
-        // App Shortcuts
         static let customAppShortcuts = "customAppShortcuts"
         static let skipNonRunningApps = "skipNonRunningApps"
         
-        // Group Navigation Shortcuts
+        static let pcModeRules = "pcModeRules"
+        
         static let enableNextGroupShortcut = "enableNextGroupShortcut"
-        static let nextGroupModifier = "nextGroupModifier" // Legacy
-        static let nextGroupModifier2 = "nextGroupModifier2" // Legacy
-        static let nextGroupKey = "nextGroupKey" // Legacy
+        static let nextGroupModifier = "nextGroupModifier"
+        static let nextGroupModifier2 = "nextGroupModifier2"
+        static let nextGroupKey = "nextGroupKey"
         static let nextGroupTriggers = "nextGroupTriggers"
         
         static let enablePrevGroupShortcut = "enablePrevGroupShortcut"
-        static let prevGroupModifier = "prevGroupModifier" // Legacy
-        static let prevGroupModifier2 = "prevGroupModifier2" // Legacy
-        static let prevGroupKey = "prevGroupKey" // Legacy
+        static let prevGroupModifier = "prevGroupModifier"
+        static let prevGroupModifier2 = "prevGroupModifier2"
+        static let prevGroupKey = "prevGroupKey"
         static let prevGroupTriggers = "prevGroupTriggers"
         
         static let enableToggleGroupShortcut = "enableToggleGroupShortcut"
-        static let toggleGroupModifier = "toggleGroupModifier" // Legacy
-        static let toggleGroupModifier2 = "toggleGroupModifier2" // Legacy
-        static let toggleGroupKey = "toggleGroupKey" // Legacy
+        static let toggleGroupModifier = "toggleGroupModifier"
+        static let toggleGroupModifier2 = "toggleGroupModifier2"
+        static let toggleGroupKey = "toggleGroupKey"
         static let toggleGroupTriggers = "toggleGroupTriggers"
     }
     
     static let customAppShortcutsData = (try? JSONEncoder().encode([
         CustomAppShortcut(triggers: [ShortcutTrigger(key: "i", modifier: "option")], bundleIDs: [""])
     ])) ?? Data()
+    
+    // Comprehensive VM & Terminal list for standard PC bindings bypass
+    static let standardExcludeList = [
+       "com.apple.Terminal", "com.googlecode.iterm2", "org.tabby", "com.mitchellh.ghostty"
+    ]
+    
+    static let defaultPCRules: [PCModeRule] = [
+        PCModeRule(name: "Navigation (Arrows)", isEnabled: false, mappings: [
+            KeyMap(from: "ctrl + left_arrow", to: "home"),
+            KeyMap(from: "ctrl + right_arrow", to: "end"),
+            KeyMap(from: "ctrl + up_arrow", to: "page_up"),
+            KeyMap(from: "ctrl + down_arrow", to: "page_down"),
+            KeyMap(from: "cmd + left_arrow", to: "home"),
+            KeyMap(from: "cmd + right_arrow", to: "end"),
+            KeyMap(from: "cmd + up_arrow", to: "page_up"),
+            KeyMap(from: "cmd + down_arrow", to: "page_down")
+        ]),
+        PCModeRule(name: "Language Switch (Opt+Shift to Space)", isEnabled: false, mappings: [
+            KeyMap(from: "opt + left_shift", to: "ctrl + opt + spacebar"),
+            KeyMap(from: "shift + left_option", to: "ctrl + opt + spacebar")
+        ]),
+        PCModeRule(name: "Delete / Backspace Word", isEnabled: false, mappings: [
+            KeyMap(from: "ctrl + delete_or_backspace", to: "opt + delete_or_backspace"),
+            KeyMap(from: "opt + delete_or_backspace", to: "delete_forward")
+        ]),
+        PCModeRule(name: "Copy/Paste/Cut/Undo/Find/Save", isEnabled: false, mappings: [
+            KeyMap(from: "ctrl + c", to: "cmd + c"),
+            KeyMap(from: "ctrl + v", to: "cmd + v"),
+            KeyMap(from: "ctrl + x", to: "cmd + x"),
+            KeyMap(from: "ctrl + z", to: "cmd + z"),
+            KeyMap(from: "ctrl + y", to: "cmd + shift + z"),
+            KeyMap(from: "ctrl + a", to: "cmd + a"),
+            KeyMap(from: "ctrl + s", to: "cmd + s"),
+            KeyMap(from: "ctrl + f", to: "cmd + f"),
+            KeyMap(from: "ctrl + g", to: "cmd + g"),
+            KeyMap(from: "ctrl + d", to: "cmd + d"),
+            KeyMap(from: "ctrl + r", to: "cmd + r")
+        ], appFilterMode: .exclude, appBundleIDs: standardExcludeList),
+        PCModeRule(name: "Browser Shortcuts", isEnabled: false, mappings: [
+            KeyMap(from: "ctrl + equal_sign", to: "cmd + equal_sign"),
+            KeyMap(from: "ctrl + hyphen", to: "cmd + hyphen"),
+            KeyMap(from: "ctrl + 0", to: "cmd + 0"),
+            KeyMap(from: "ctrl + shift + b", to: "cmd + shift + b"),
+            KeyMap(from: "ctrl + shift + t", to: "cmd + shift + t")
+        ], appFilterMode: .include, appBundleIDs: ["org.mozilla.firefox", "com.microsoft.Edge", "com.google.Chrome", "com.brave.Browser", "com.apple.Safari"]),
+        PCModeRule(name: "Shift+F12 to Paste (Standard)", isEnabled: false, mappings: [
+            KeyMap(from: "shift + f12", to: "cmd + v")
+        ], appFilterMode: .exclude, appBundleIDs: ["org.tabby", "com.mitchellh.ghostty"]),
+        PCModeRule(name: "Shift+F12 to Insert (Terminals)", isEnabled: false, mappings: [
+            KeyMap(from: "shift + f12", to: "shift + insert")
+        ], appFilterMode: .include, appBundleIDs: ["org.tabby", "com.mitchellh.ghostty"]),
+        PCModeRule(name: "Print Screen (Shift+F10)", isEnabled: false, mappings: [
+            KeyMap(from: "ctrl + shift + f10", to: "cmd + shift + 1"),
+            KeyMap(from: "shift + f10", to: "cmd + shift + 2")
+        ]),
+        PCModeRule(name: "Switch Apps (Alt+Tab)", isEnabled: false, mappings: [
+            KeyMap(from: "opt + tab", to: "ctrl + f4")
+        ]),
+        PCModeRule(name: "Spotlight (Opt+Space)", isEnabled: false, mappings: [
+            KeyMap(from: "opt + spacebar", to: "cmd + spacebar")
+        ]),
+        PCModeRule(name: "System Controls & Misc", isEnabled: false, mappings: [
+            KeyMap(from: "cmd + f11", to: "shift + opt + volume_decrement"),
+            KeyMap(from: "cmd + f12", to: "shift + opt + volume_increment"),
+            KeyMap(from: "cmd + f1", to: "shift + opt + display_brightness_decrement"),
+            KeyMap(from: "cmd + f2", to: "shift + opt + display_brightness_increment"),
+            KeyMap(from: "ctrl + slash", to: "cmd + slash"),
+            KeyMap(from: "ctrl + shift + m", to: "cmd + shift + m")
+        ]),
+        PCModeRule(name: "Tabs Management", isEnabled: false, mappings: [
+            KeyMap(from: "right_shift + right_option", to: "ctrl + tab"),
+            KeyMap(from: "right_shift + right_command", to: "ctrl + shift + tab"),
+            KeyMap(from: "right_shift + up_arrow", to: "ctrl + tab"),
+            KeyMap(from: "right_shift + left_arrow", to: "ctrl + shift + tab"),
+            KeyMap(from: "opt + w", to: "ctrl + tab"),
+            KeyMap(from: "opt + q", to: "ctrl + shift + tab")
+        ]),
+        PCModeRule(name: "Task Manager (Ctrl+Shift+Esc)", isEnabled: false, mappings: [
+            KeyMap(from: "ctrl + shift + esc", to: "shell: open '/System/Applications/Utilities/Activity Monitor.app'")
+        ])
+    ]
+    
+    static let pcModeRulesData = (try? JSONEncoder().encode(defaultPCRules)) ?? Data()
     
     static let defaults: [String: Any] = [
         Keys.copyOnSelect: true,
@@ -117,8 +198,8 @@ struct AppConfig {
         
         Keys.customAppShortcuts: customAppShortcutsData,
         Keys.skipNonRunningApps: false,
+        Keys.pcModeRules: pcModeRulesData,
         
-        // Group Navigation Defaults (Disabled by default)
         Keys.enableNextGroupShortcut: false,
         Keys.nextGroupModifier: "right control",
         Keys.nextGroupModifier2: "shift",

@@ -154,7 +154,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             var width = termRect.width
             let height = termRect.height
             
-            let fixedWidth: CGFloat = 250
+            let fixedWidth: CGFloat = 220
             let gap: CGFloat = 1
             
             // --- RESIZE LOGIC ---

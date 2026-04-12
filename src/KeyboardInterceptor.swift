@@ -6,6 +6,9 @@ private var globalKeyboardEventTap: CFMachPort?
 private var savedOriginBundleID: String?
 private var lastUsedShortcutID: UUID?
 
+// Magic tag to prevent infinite loops from our own synthesized events
+private let magicEventSourceUserData: Int64 = 0x46696E65 // "Fine"
+
 // Optimized Cache Structures
 struct ParsedKeyMap {
     let original: KeyMap
@@ -27,6 +30,9 @@ private var cachedNextGroupTriggers: [ShortcutTrigger] = []
 private var cachedPrevGroupTriggers: [ShortcutTrigger] = []
 private var cachedToggleGroupTriggers: [ShortcutTrigger] = []
 private var userDefaultsObserver: NSObjectProtocol?
+
+// State tracker to guarantee correct KeyUp events for synthesized KeyDowns
+private var activeRemaps: [CGKeyCode: CGKeyCode] = [:]
 
 fileprivate func refreshCustomShortcutsCache() {
     if let data = UserDefaults.standard.data(forKey: AppConfig.Keys.customAppShortcuts),
@@ -91,6 +97,20 @@ fileprivate func loadTriggers(forKey key: String, oldMod1: String, oldMod2: Stri
 class KeyboardInterceptor {
     var eventTap: CFMachPort?
     var runLoopSource: CFRunLoopSource?
+    
+    // Maps NX_KEYTYPE media keys to standard F-key keycodes
+    static let mediaKeyToFKey: [Int32: CGKeyCode] = [
+        0: 111,  // VolUp -> F12
+        1: 103,  // VolDown -> F11
+        7: 109,  // Mute -> F10
+        2: 120,  // BrightnessUp -> F2
+        3: 122,  // BrightnessDown -> F1
+        21: 97,  // KbdBrightUp -> F6
+        22: 96,  // KbdBrightDown -> F5
+        16: 100, // Play -> F8
+        17: 101, // Next -> F9
+        18: 98   // Prev -> F7
+    ]
 
     static let specialKeyCodes: [String: CGKeyCode] = [
         "esc": 53, "escape": 53, "tab": 48, "space": 49, "spacebar": 49,
@@ -100,6 +120,7 @@ class KeyboardInterceptor {
         "delete_or_backspace": 51, "delete_forward": 117, "insert": 114,
         "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
         "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
+        "f13": 105, "f14": 107, "f15": 113, "f16": 106, "f17": 64, "f18": 79, "f19": 80, "f20": 90,
         "hyphen": 27, "equal_sign": 24, "slash": 44, "backslash": 42,
         "left_shift": 56, "right_shift": 60, "left_control": 59, "right_control": 62,
         "left_option": 58, "right_option": 61, "left_command": 55, "right_command": 54,
@@ -172,7 +193,12 @@ class KeyboardInterceptor {
             refreshCustomShortcutsCache()
         }
         
-        let eventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
+        // 14 is NX_SYSDEFINED (System Defined Events like Media Keys)
+        let eventMask = (1 << CGEventType.keyDown.rawValue) | 
+                        (1 << CGEventType.keyUp.rawValue) | 
+                        (1 << CGEventType.flagsChanged.rawValue) |
+                        (1 << 14) 
+                        
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -207,6 +233,7 @@ class KeyboardInterceptor {
         runLoopSource = nil
         savedOriginBundleID = nil
         lastUsedShortcutID = nil
+        activeRemaps.removeAll()
     }
 }
 
@@ -448,8 +475,8 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
                 if let firstWindow = cycleWindows.firstIndex(where: { $0.app.bundleIdentifier == nextBundleID }) {
                     targetIndex = firstWindow
                 } else {
-                    activateApp(bundleID: nextBundleID)
-                    return
+                        activateApp(bundleID: nextBundleID)
+                        return
                 }
             } else {
                 targetIndex = 0
@@ -512,15 +539,37 @@ func getRealFrontmostApp() -> NSRunningApplication? {
     return workspaceApp
 }
 
-enum PCModeResult {
-    case ignored
-    case modified(CGEvent)
-    case swallowed
-}
-
-func processPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags: CGEventFlags, frontAppID: String) -> PCModeResult {
+func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, frontAppID: String) -> Bool {
     let isFlagsChanged = (type == .flagsChanged)
     let rawKeyCode = CGKeyCode(keyCode)
+    
+    // 1. Un-stick Logic for KeyUp
+    // Guarantees that if a physical key went down and was remapped, its corresponding keyUp will release the remapped key
+    if type == .keyUp {
+        if let mappedTo = activeRemaps[rawKeyCode] {
+            activeRemaps.removeValue(forKey: rawKeyCode)
+            
+            // If mappedTo == 0, it was a shell command that was completely swallowed
+            if mappedTo != 0 {
+                let source = CGEventSource(stateID: .hidSystemState)
+                if let newEvent = CGEvent(keyboardEventSource: source, virtualKey: mappedTo, keyDown: false) {
+                    var finalFlags = flags
+                    let navKeys: Set<CGKeyCode> = [114, 115, 119, 116, 121, 123, 124, 125, 126, 117]
+                    let fnKeys: Set<CGKeyCode> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
+                    if navKeys.contains(mappedTo) || fnKeys.contains(mappedTo) { finalFlags.insert(.maskSecondaryFn) }
+                    if navKeys.contains(mappedTo) { finalFlags.insert(.maskNumericPad) }
+                    
+                    newEvent.flags = finalFlags
+                    newEvent.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                    newEvent.post(tap: .cghidEventTap)
+                }
+            }
+            return true // Swallow original KeyUp
+        }
+        return false // Was not remapped on down, let pass through normally
+    }
+
+    // 2. Process Rules for KeyDown and FlagsChanged
     let originalFlags = flags
     
     for parsedRule in cachedParsedPCRules {
@@ -542,11 +591,8 @@ func processPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags
             }
             
             let coreEventFlags = cleanEventFlags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
-            
-            // Allow extra modifiers to pass through
             if !coreEventFlags.isSuperset(of: map.fromCoreFlags) { continue }
             
-            // Strict exact match for specific modifiers
             var strictMatch = true
             let raw = cleanEventFlags.rawValue
             for strictMod in map.fromStrictFlags {
@@ -564,7 +610,7 @@ func processPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags
             }
             if !strictMatch { continue }
             
-            // Handle shell commands
+            // Match found!
             if map.toKeyCode == 0 && map.original.to.lowercased().hasPrefix("shell:") {
                 if !isFlagsChanged && type == .keyDown {
                     let cmdStartIndex = map.original.to.index(map.original.to.startIndex, offsetBy: 6)
@@ -573,8 +619,9 @@ func processPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags
                     task.launchPath = "/bin/sh"
                     task.arguments = ["-c", cmd]
                     try? task.run()
+                    activeRemaps[rawKeyCode] = 0 // Track so KeyUp is swallowed smoothly
                 }
-                return .swallowed
+                return true
             }
             
             let extraFlags = coreEventFlags.subtracting(map.fromCoreFlags)
@@ -582,13 +629,11 @@ func processPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags
             newCoreFlags.formUnion(extraFlags)
             
             var finalFlags = originalFlags
-            // Strip core flags AND hidden hardware flags to prevent sticky keystrokes
             finalFlags.remove([.maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn, .maskNumericPad])
             finalFlags.formUnion(newCoreFlags)
             
-            // Apply hardware flags for F-keys and Nav-keys (Crucial for Alt+Tab to Ctrl+F4)
             let navKeys: Set<CGKeyCode> = [114, 115, 119, 116, 121, 123, 124, 125, 126, 117]
-            let fnKeys: Set<CGKeyCode> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111]
+            let fnKeys: Set<CGKeyCode> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
             
             if navKeys.contains(map.toKeyCode) || fnKeys.contains(map.toKeyCode) {
                 finalFlags.insert(.maskSecondaryFn)
@@ -613,20 +658,27 @@ func processPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags
                        let up = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: false) {
                         down.flags = finalFlags
                         up.flags = finalFlags
+                        down.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                        up.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
                         down.post(tap: .cghidEventTap)
                         up.post(tap: .cghidEventTap)
                     }
                 }
-                // Swallow the modifier entirely
-                return .swallowed
+                return true
             } else {
-                event.setIntegerValueField(.keyboardEventKeycode, value: Int64(map.toKeyCode))
-                event.flags = finalFlags
-                return .modified(event)
+                activeRemaps[rawKeyCode] = map.toKeyCode
+                let source = CGEventSource(stateID: .hidSystemState)
+                if let newEvent = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: true) {
+                    newEvent.flags = finalFlags
+                    newEvent.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                    // Post to .cghidEventTap so that it triggers System Hotkeys (like Alt+Tab, Cmd+Space) reliably
+                    newEvent.post(tap: .cghidEventTap)
+                }
+                return true
             }
         }
     }
-    return .ignored
+    return false
 }
 
 func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
@@ -635,45 +687,62 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return Unmanaged.passUnretained(event)
     }
     
-    // --- STAGE 0: PC MODE REMAPPING ---
-    let isKeyDownOrUp = type == .keyDown || type == .keyUp || type == .flagsChanged
-    var finalEvent = event
-    var keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-    var flags = event.flags
-    let typeToProcess = type
+    // Safety Net: Prevent infinite loops from our own synthesized CGEvents
+    if event.getIntegerValueField(.eventSourceUserData) == magicEventSourceUserData {
+        return Unmanaged.passUnretained(event)
+    }
     
-    let frontApp = getRealFrontmostApp()
+    // Evaluate possible System Defined Events (Media Keys translated to F-keys)
+    var effectiveType = type
+    var effectiveKeyCode = event.getIntegerValueField(.keyboardEventKeycode)
     
-    if isKeyDownOrUp {
-        let frontAppID = frontApp?.bundleIdentifier ?? ""
-        let result = processPCModeRules(event: event, type: type, keyCode: keyCode, flags: flags, frontAppID: frontAppID)
-        
-        switch result {
-        case .swallowed:
-            return nil
-        case .modified(let remappedEvent):
-            finalEvent = remappedEvent
-            keyCode = remappedEvent.getIntegerValueField(.keyboardEventKeycode)
-            flags = remappedEvent.flags
-        case .ignored:
-            break
+    if type.rawValue == 14 { // NX_SYSDEFINED
+        if let nsEvent = NSEvent(cgEvent: event), nsEvent.subtype.rawValue == 8 {
+            let data1 = nsEvent.data1
+            let mediaKeyCode = Int32((data1 & 0xFFFF0000) >> 16)
+            let keyFlags = Int32(data1 & 0x0000FFFF)
+            let isKeyDown = (((keyFlags & 0xFF00) >> 8) == 0xA)
+            
+            if let fKeyCode = KeyboardInterceptor.mediaKeyToFKey[mediaKeyCode] {
+                effectiveType = isKeyDown ? .keyDown : .keyUp
+                effectiveKeyCode = Int64(fKeyCode)
+            } else {
+                return Unmanaged.passUnretained(event)
+            }
+        } else {
+            return Unmanaged.passUnretained(event)
         }
     }
     
-    guard typeToProcess == .keyDown || typeToProcess == .flagsChanged else {
-        return Unmanaged.passUnretained(finalEvent)
+    let isKeyDownOrUp = effectiveType == .keyDown || effectiveType == .keyUp || effectiveType == .flagsChanged
+    let flags = event.flags
+    
+    let frontApp = getRealFrontmostApp()
+    
+    // Execute PC Mode Mapping (First Priority)
+    if isKeyDownOrUp {
+        let frontAppID = frontApp?.bundleIdentifier ?? ""
+        let wasSwallowed = processPCModeRules(type: effectiveType, keyCode: effectiveKeyCode, flags: flags, frontAppID: frontAppID)
+        if wasSwallowed {
+            return nil
+        }
+    }
+    
+    // Only evaluate Global Shortcuts on purely unswallowed keyDown/flagsChanged events
+    guard effectiveType == .keyDown || effectiveType == .flagsChanged else {
+        return Unmanaged.passUnretained(event)
     }
     
     let defaults = UserDefaults.standard
     
     let isNextMatch = defaults.bool(forKey: AppConfig.Keys.enableNextGroupShortcut) &&
-        isAnyTriggerMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags, triggers: cachedNextGroupTriggers)
+        isAnyTriggerMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags, triggers: cachedNextGroupTriggers)
                               
     let isPrevMatch = defaults.bool(forKey: AppConfig.Keys.enablePrevGroupShortcut) &&
-        isAnyTriggerMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags, triggers: cachedPrevGroupTriggers)
+        isAnyTriggerMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags, triggers: cachedPrevGroupTriggers)
 
     let isToggleGroupMatch = defaults.bool(forKey: AppConfig.Keys.enableToggleGroupShortcut) &&
-        isAnyTriggerMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags, triggers: cachedToggleGroupTriggers)
+        isAnyTriggerMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags, triggers: cachedToggleGroupTriggers)
     
     var matchedCustomShortcut: CustomAppShortcut?
     for shortcut in cachedCustomShortcuts {
@@ -681,31 +750,31 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
         if validBundleIDs.isEmpty { continue }
         
-        if isAnyTriggerMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags, triggers: shortcut.triggers) {
+        if isAnyTriggerMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags, triggers: shortcut.triggers) {
             matchedCustomShortcut = shortcut
             break
         }
     }
     
-    let isMainMatch = isGlobalShortcutMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags,
+    let isMainMatch = isGlobalShortcutMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags,
                                             keyStr: defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n",
                                             mod1Str: defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command",
                                             mod2Str: nil)
                                             
     let isToggleMatch = defaults.bool(forKey: AppConfig.Keys.enableTerminalToggleShortcut) &&
-                        isGlobalShortcutMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags,
+                        isGlobalShortcutMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags,
                                             keyStr: defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutKey) ?? "h",
                                             mod1Str: defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutModifier) ?? "command",
                                             mod2Str: nil)
                                             
     let isClipMatch = defaults.bool(forKey: AppConfig.Keys.enableClipboardManager) &&
-                      isGlobalShortcutMatch(type: typeToProcess, eventKeyCode: keyCode, flags: flags,
+                      isGlobalShortcutMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags,
                                             keyStr: defaults.string(forKey: AppConfig.Keys.clipboardShortcutKey) ?? "u",
                                             mod1Str: defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command",
                                             mod2Str: nil)
     
     if !isNextMatch && !isPrevMatch && !isToggleGroupMatch && matchedCustomShortcut == nil && !isMainMatch && !isToggleMatch && !isClipMatch {
-        return Unmanaged.passUnretained(finalEvent)
+        return Unmanaged.passUnretained(event)
     }
     
     if isNextMatch || isPrevMatch || isToggleGroupMatch {
@@ -739,7 +808,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
                 DispatchQueue.main.async { executeCustomShortcutCycle(validBundleIDs: t.bundleIDs.filter({!$0.isEmpty}), frontApp: frontApp) }
             }
         }
-        return typeToProcess == .keyDown ? nil : Unmanaged.passUnretained(finalEvent)
+        return effectiveType == .keyDown ? nil : Unmanaged.passUnretained(event)
     }
     
     if let shortcut = matchedCustomShortcut {
@@ -748,7 +817,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         DispatchQueue.main.async {
             executeCustomShortcutCycle(validBundleIDs: validBundleIDs, frontApp: frontApp)
         }
-        return typeToProcess == .keyDown ? nil : Unmanaged.passUnretained(finalEvent)
+        return effectiveType == .keyDown ? nil : Unmanaged.passUnretained(event)
     }
     
     let target = defaults.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
@@ -760,11 +829,11 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         let secondActivation = defaults.bool(forKey: AppConfig.Keys.secondActivationToTerminal)
         let thirdActivation = defaults.bool(forKey: AppConfig.Keys.thirdActivationToOrigin)
         
-        if !mainAnywhere && !isTerminalFront && !isFineTermFront { return Unmanaged.passUnretained(finalEvent) }
+        if !mainAnywhere && !isTerminalFront && !isFineTermFront { return Unmanaged.passUnretained(event) }
         
         if isFineTermFront {
             if secondActivation { activateTerminal(); return nil }
-            return Unmanaged.passUnretained(finalEvent)
+            return Unmanaged.passUnretained(event)
         }
         
         if isTerminalFront {
@@ -791,7 +860,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
                 DispatchQueue.main.async { activateApp(bundleID: originID) }
                 return nil
             }
-            return Unmanaged.passUnretained(finalEvent)
+            return Unmanaged.passUnretained(event)
         } else {
             if !isFineTermFront, let app = frontApp, let bundleID = app.bundleIdentifier, bundleID != target, bundleID != Bundle.main.bundleIdentifier {
                 savedOriginBundleID = bundleID
@@ -808,5 +877,5 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return nil
     }
     
-    return Unmanaged.passUnretained(finalEvent)
+    return Unmanaged.passUnretained(event)
 }

@@ -115,16 +115,16 @@ struct AppConfig {
             KeyMap(from: "ctrl + shift + b", to: "cmd + shift + b"),
             KeyMap(from: "ctrl + shift + t", to: "cmd + shift + t")
         ], appFilterMode: .include, appBundleIDs: ["org.mozilla.firefox", "com.microsoft.Edge", "com.google.Chrome", "com.brave.Browser", "com.apple.Safari"]),
+        PCModeRule(name: "Shift+F10 to Print Screen", isEnabled: false, mappings: [
+            KeyMap(from: "ctrl + shift + f10", to: "cmd + shift + 1"),
+            KeyMap(from: "shift + f10", to: "cmd + shift + 2")
+        ]),
         PCModeRule(name: "Shift+F12 to Paste (Standard)", isEnabled: false, mappings: [
             KeyMap(from: "shift + f12", to: "cmd + v")
         ], appFilterMode: .exclude, appBundleIDs: ["org.tabby", "com.mitchellh.ghostty"]),
         PCModeRule(name: "Shift+F12 to Insert (Terminals)", isEnabled: false, mappings: [
             KeyMap(from: "shift + f12", to: "shift + insert")
         ], appFilterMode: .include, appBundleIDs: ["org.tabby", "com.mitchellh.ghostty"]),
-        PCModeRule(name: "Print Screen (Shift+F10)", isEnabled: false, mappings: [
-            KeyMap(from: "ctrl + shift + f10", to: "cmd + shift + 1"),
-            KeyMap(from: "shift + f10", to: "cmd + shift + 2")
-        ]),
         PCModeRule(name: "Switch Apps (Alt+Tab)", isEnabled: false, mappings: [
             KeyMap(from: "opt + tab", to: "ctrl + f4")
         ]),
@@ -140,10 +140,10 @@ struct AppConfig {
             KeyMap(from: "ctrl + shift + m", to: "cmd + shift + m")
         ]),
         PCModeRule(name: "Tabs Management", isEnabled: false, mappings: [
-            KeyMap(from: "right_shift + right_option", to: "ctrl + tab"),
-            KeyMap(from: "right_shift + right_command", to: "ctrl + shift + tab"),
-            KeyMap(from: "right_shift + up_arrow", to: "ctrl + tab"),
-            KeyMap(from: "right_shift + left_arrow", to: "ctrl + shift + tab"),
+            KeyMap(from: "rshift + ropt", to: "ctrl + tab"),
+            KeyMap(from: "rshift + rcmd", to: "ctrl + shift + tab"),
+            KeyMap(from: "rshift + up_arrow", to: "ctrl + tab"),
+            KeyMap(from: "rshift + left_arrow", to: "ctrl + shift + tab"),
             KeyMap(from: "opt + w", to: "ctrl + tab"),
             KeyMap(from: "opt + q", to: "ctrl + shift + tab")
         ]),

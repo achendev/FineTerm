@@ -11,6 +11,7 @@ struct ParsedKeyMap {
     let original: KeyMap
     let fromKeyCode: CGKeyCode
     let fromCoreFlags: CGEventFlags
+    let fromStrictFlags: [String]
     let toKeyCode: CGKeyCode
     let toCoreFlags: CGEventFlags
 }
@@ -55,10 +56,14 @@ fileprivate func refreshCustomShortcutsCache() {
                     toCode = c
                 }
                 
-                let fromFlags = KeyboardInterceptor.parseModifiers(fromParsed.modifiers)
-                let toFlags = KeyboardInterceptor.parseModifiers(toParsed.modifiers)
-                
-                parsedMappings.append(ParsedKeyMap(original: map, fromKeyCode: fromCode, fromCoreFlags: fromFlags, toKeyCode: toCode, toCoreFlags: toFlags))
+                parsedMappings.append(ParsedKeyMap(
+                    original: map, 
+                    fromKeyCode: fromCode, 
+                    fromCoreFlags: fromParsed.coreFlags, 
+                    fromStrictFlags: fromParsed.strictFlags, 
+                    toKeyCode: toCode, 
+                    toCoreFlags: toParsed.coreFlags
+                ))
             }
             
             // Sort by most specific modifiers first (e.g. Ctrl+Shift matches before Ctrl)
@@ -72,7 +77,7 @@ fileprivate func refreshCustomShortcutsCache() {
     cachedToggleGroupTriggers = loadTriggers(forKey: AppConfig.Keys.toggleGroupTriggers, oldMod1: AppConfig.Keys.toggleGroupModifier, oldMod2: AppConfig.Keys.toggleGroupModifier2, oldKey: AppConfig.Keys.toggleGroupKey, defaultKey: "/")
 }
 
-fileprivate func loadTriggers(forKey key: String, oldMod1: String, oldMod2: String, oldKey: String, defaultKey: String) ->[ShortcutTrigger] {
+fileprivate func loadTriggers(forKey key: String, oldMod1: String, oldMod2: String, oldKey: String, defaultKey: String) -> [ShortcutTrigger] {
     if let data = UserDefaults.standard.data(forKey: key),
        let decoded = try? JSONDecoder().decode([ShortcutTrigger].self, from: data), !decoded.isEmpty {
         return decoded
@@ -80,7 +85,7 @@ fileprivate func loadTriggers(forKey key: String, oldMod1: String, oldMod2: Stri
     let m1 = UserDefaults.standard.string(forKey: oldMod1) ?? "right control"
     let m2 = UserDefaults.standard.string(forKey: oldMod2) ?? "shift"
     let k = UserDefaults.standard.string(forKey: oldKey) ?? defaultKey
-    return[ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
+    return [ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
 }
 
 class KeyboardInterceptor {
@@ -98,6 +103,10 @@ class KeyboardInterceptor {
         "hyphen": 27, "equal_sign": 24, "slash": 44, "backslash": 42,
         "left_shift": 56, "right_shift": 60, "left_control": 59, "right_control": 62,
         "left_option": 58, "right_option": 61, "left_command": 55, "right_command": 54,
+        "lshift": 56, "rshift": 60, "lctrl": 59, "rctrl": 62,
+        "lopt": 58, "ropt": 61, "lcmd": 55, "rcmd": 54,
+        "alt": 58, "lalt": 58, "ralt": 61,
+        "cmd": 55, "ctrl": 59, "shift": 56,
         "volume_decrement": 73, "volume_increment": 72, "display_brightness_decrement": 145, "display_brightness_increment": 144
     ]
 
@@ -119,40 +128,42 @@ class KeyboardInterceptor {
         }
     }
     
-    static func parseKeyString(_ input: String) -> (modifiers: [String], key: String) {
+    static func parseKeyString(_ input: String) -> (coreFlags: CGEventFlags, strictFlags: [String], key: String) {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.lowercased().hasPrefix("shell:") {
-            return ([], trimmed)
+            return ([], [], trimmed)
         }
         
         let rawParts = input.components(separatedBy: "+")
         let parts = rawParts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty }
         
-        guard !parts.isEmpty else { return ([], "") }
+        guard !parts.isEmpty else { return ([], [], "") }
         
-        var mods: [String] = []
+        var coreFlags: CGEventFlags = []
+        var strictFlags: [String] = []
         let key = parts.last!
         
         if parts.count > 1 {
-            for i in 0..<(parts.count - 1) {
-                var mod = parts[i]
-                if mod == "cmd" || mod == "command" { mod = "command" }
-                else if mod == "ctrl" || mod == "control" { mod = "control" }
-                else if mod == "opt" || mod == "alt" || mod == "option" { mod = "option" }
-                else if mod == "shift" { mod = "shift" }
-                mods.append(mod)
+            for mod in parts.dropLast() {
+                switch mod {
+                case "cmd", "command": coreFlags.insert(.maskCommand)
+                case "ctrl", "control": coreFlags.insert(.maskControl)
+                case "opt", "alt", "option": coreFlags.insert(.maskAlternate)
+                case "shift": coreFlags.insert(.maskShift)
+                
+                case "lcmd", "left_command": coreFlags.insert(.maskCommand); strictFlags.append("left_command")
+                case "rcmd", "right_command": coreFlags.insert(.maskCommand); strictFlags.append("right_command")
+                case "lctrl", "left_control": coreFlags.insert(.maskControl); strictFlags.append("left_control")
+                case "rctrl", "right_control": coreFlags.insert(.maskControl); strictFlags.append("right_control")
+                case "lopt", "left_option", "lalt": coreFlags.insert(.maskAlternate); strictFlags.append("left_option")
+                case "ropt", "right_option", "ralt": coreFlags.insert(.maskAlternate); strictFlags.append("right_option")
+                case "lshift", "left_shift": coreFlags.insert(.maskShift); strictFlags.append("left_shift")
+                case "rshift", "right_shift": coreFlags.insert(.maskShift); strictFlags.append("right_shift")
+                default: break
+                }
             }
         }
-        return (mods, key)
-    }
-
-    static func parseModifiers(_ mods: [String]) -> CGEventFlags {
-        var flags: CGEventFlags = []
-        if mods.contains("command") { flags.insert(.maskCommand) }
-        if mods.contains("control") { flags.insert(.maskControl) }
-        if mods.contains("option") { flags.insert(.maskAlternate) }
-        if mods.contains("shift") { flags.insert(.maskShift) }
-        return flags
+        return (coreFlags, strictFlags, key)
     }
 
     func start() {
@@ -501,9 +512,15 @@ func getRealFrontmostApp() -> NSRunningApplication? {
     return workspaceApp
 }
 
-func applyPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags: CGEventFlags, frontAppID: String) -> CGEvent? {
+enum PCModeResult {
+    case ignored
+    case modified(CGEvent)
+    case swallowed
+}
+
+func processPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags: CGEventFlags, frontAppID: String) -> PCModeResult {
     let isFlagsChanged = (type == .flagsChanged)
-    let rawKeyCode = keyCode
+    let rawKeyCode = CGKeyCode(keyCode)
     let originalFlags = flags
     
     for parsedRule in cachedParsedPCRules {
@@ -526,8 +543,26 @@ func applyPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags: 
             
             let coreEventFlags = cleanEventFlags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
             
-            // Allow extra modifiers to pass through (e.g. Ctrl+Shift+Left matches Ctrl+Left)
+            // Allow extra modifiers to pass through
             if !coreEventFlags.isSuperset(of: map.fromCoreFlags) { continue }
+            
+            // Strict exact match for specific modifiers
+            var strictMatch = true
+            let raw = cleanEventFlags.rawValue
+            for strictMod in map.fromStrictFlags {
+                switch strictMod {
+                case "left_command": if (raw & 0x08) == 0 { strictMatch = false }
+                case "right_command": if (raw & 0x10) == 0 { strictMatch = false }
+                case "left_control": if (raw & 0x01) == 0 { strictMatch = false }
+                case "right_control": if (raw & 0x2000) == 0 { strictMatch = false }
+                case "left_option": if (raw & 0x20) == 0 { strictMatch = false }
+                case "right_option": if (raw & 0x40) == 0 { strictMatch = false }
+                case "left_shift": if (raw & 0x02) == 0 { strictMatch = false }
+                case "right_shift": if (raw & 0x04) == 0 { strictMatch = false }
+                default: break
+                }
+            }
+            if !strictMatch { continue }
             
             // Handle shell commands
             if map.toKeyCode == 0 && map.original.to.lowercased().hasPrefix("shell:") {
@@ -539,7 +574,7 @@ func applyPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags: 
                     task.arguments = ["-c", cmd]
                     try? task.run()
                 }
-                return nil // Swallow event entirely
+                return .swallowed
             }
             
             let extraFlags = coreEventFlags.subtracting(map.fromCoreFlags)
@@ -547,13 +582,19 @@ func applyPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags: 
             newCoreFlags.formUnion(extraFlags)
             
             var finalFlags = originalFlags
-            finalFlags.remove([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+            // Strip core flags AND hidden hardware flags to prevent sticky keystrokes
+            finalFlags.remove([.maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn, .maskNumericPad])
             finalFlags.formUnion(newCoreFlags)
             
-            let navKeys: Set<CGKeyCode> = [115, 119, 116, 121, 123, 124, 125, 126, 117]
+            // Apply hardware flags for F-keys and Nav-keys (Crucial for Alt+Tab to Ctrl+F4)
+            let navKeys: Set<CGKeyCode> = [114, 115, 119, 116, 121, 123, 124, 125, 126, 117]
+            let fnKeys: Set<CGKeyCode> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111]
+            
+            if navKeys.contains(map.toKeyCode) || fnKeys.contains(map.toKeyCode) {
+                finalFlags.insert(.maskSecondaryFn)
+            }
             if navKeys.contains(map.toKeyCode) {
                 finalFlags.insert(.maskNumericPad)
-                finalFlags.insert(.maskSecondaryFn)
             }
             
             if isFlagsChanged {
@@ -576,15 +617,16 @@ func applyPCModeRules(event: CGEvent, type: CGEventType, keyCode: Int64, flags: 
                         up.post(tap: .cghidEventTap)
                     }
                 }
-                return event 
+                // Swallow the modifier entirely
+                return .swallowed
             } else {
                 event.setIntegerValueField(.keyboardEventKeycode, value: Int64(map.toKeyCode))
                 event.flags = finalFlags
-                return event
+                return .modified(event)
             }
         }
     }
-    return nil
+    return .ignored
 }
 
 func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
@@ -604,10 +646,17 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     
     if isKeyDownOrUp {
         let frontAppID = frontApp?.bundleIdentifier ?? ""
-        if let remapped = applyPCModeRules(event: event, type: type, keyCode: keyCode, flags: flags, frontAppID: frontAppID) {
-            finalEvent = remapped
-            keyCode = remapped.getIntegerValueField(.keyboardEventKeycode)
-            flags = remapped.flags
+        let result = processPCModeRules(event: event, type: type, keyCode: keyCode, flags: flags, frontAppID: frontAppID)
+        
+        switch result {
+        case .swallowed:
+            return nil
+        case .modified(let remappedEvent):
+            finalEvent = remappedEvent
+            keyCode = remappedEvent.getIntegerValueField(.keyboardEventKeycode)
+            flags = remappedEvent.flags
+        case .ignored:
+            break
         }
     }
     

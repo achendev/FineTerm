@@ -128,7 +128,18 @@ class KeyboardInterceptor {
         "lopt": 58, "ropt": 61, "lcmd": 55, "rcmd": 54,
         "alt": 58, "lalt": 58, "ralt": 61,
         "cmd": 55, "ctrl": 59, "shift": 56,
-        "volume_decrement": 73, "volume_increment": 72, "display_brightness_decrement": 145, "display_brightness_increment": 144
+        
+        // Virtual KeyCodes for system media keys
+        "volume_increment": 1000, "vol_up": 1000,
+        "volume_decrement": 1001, "vol_down": 1001,
+        "display_brightness_increment": 1002, "brightness_up": 1002,
+        "display_brightness_decrement": 1003, "brightness_down": 1003,
+        "mute": 1007,
+        "play_pause": 1016, "play": 1016,
+        "next_track": 1017,
+        "prev_track": 1018,
+        "illumination_increment": 1021, "kbd_brightness_up": 1021,
+        "illumination_decrement": 1022, "kbd_brightness_down": 1022
     ]
 
     static func getKeyCode(for char: String) -> CGKeyCode? {
@@ -185,6 +196,27 @@ class KeyboardInterceptor {
             }
         }
         return (coreFlags, strictFlags, key)
+    }
+
+    static func postMediaKeyEvent(mediaKey: Int32, isDown: Bool, flags: CGEventFlags) {
+        let loc = NSPoint(x: 0, y: 0)
+        let data1 = (Int(mediaKey) << 16) | (isDown ? 0xA00 : 0xB00)
+        let nsFlags = NSEvent.ModifierFlags(rawValue: UInt(flags.rawValue))
+        
+        if let ev = NSEvent.otherEvent(
+            with: .systemDefined,
+            location: loc,
+            modifierFlags: nsFlags,
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: 0,
+            context: nil,
+            subtype: 8,
+            data1: data1,
+            data2: -1
+        ), let cg = ev.cgEvent {
+            cg.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+            cg.post(tap: .cghidEventTap)
+        }
     }
 
     func start() {
@@ -549,8 +581,10 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
         if let mappedTo = activeRemaps[rawKeyCode] {
             activeRemaps.removeValue(forKey: rawKeyCode)
             
-            // If mappedTo == 0, it was a shell command that was completely swallowed
-            if mappedTo != 0 {
+            if mappedTo >= 1000 {
+                let mediaKey = Int32(mappedTo - 1000)
+                KeyboardInterceptor.postMediaKeyEvent(mediaKey: mediaKey, isDown: false, flags: flags)
+            } else if mappedTo != 0 {
                 let source = CGEventSource(stateID: .hidSystemState)
                 if let newEvent = CGEvent(keyboardEventSource: source, virtualKey: mappedTo, keyDown: false) {
                     var finalFlags = flags
@@ -611,7 +645,38 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
             if !strictMatch { continue }
             
             // Match found!
-            if map.toKeyCode == 0 && map.original.to.lowercased().hasPrefix("shell:") {
+            let extraFlags = coreEventFlags.subtracting(map.fromCoreFlags)
+            var newCoreFlags = map.toCoreFlags
+            newCoreFlags.formUnion(extraFlags)
+            
+            var finalFlags = originalFlags
+            finalFlags.remove([.maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn, .maskNumericPad])
+            finalFlags.formUnion(newCoreFlags)
+            
+            if map.toKeyCode >= 1000 {
+                // Map to a Media Key (Volume/Brightness)
+                let mediaKey = Int32(map.toKeyCode - 1000)
+                if isFlagsChanged {
+                    var isPress = false
+                    switch rawKeyCode {
+                    case 56, 60: isPress = originalFlags.contains(.maskShift)
+                    case 59, 62: isPress = originalFlags.contains(.maskControl)
+                    case 58, 61: isPress = originalFlags.contains(.maskAlternate)
+                    case 55, 54: isPress = originalFlags.contains(.maskCommand)
+                    default: break
+                    }
+                    if isPress {
+                        KeyboardInterceptor.postMediaKeyEvent(mediaKey: mediaKey, isDown: true, flags: finalFlags)
+                        KeyboardInterceptor.postMediaKeyEvent(mediaKey: mediaKey, isDown: false, flags: finalFlags)
+                    }
+                    return true
+                } else {
+                    activeRemaps[rawKeyCode] = map.toKeyCode
+                    KeyboardInterceptor.postMediaKeyEvent(mediaKey: mediaKey, isDown: true, flags: finalFlags)
+                    return true
+                }
+            } else if map.toKeyCode == 0 && map.original.to.lowercased().hasPrefix("shell:") {
+                // Map to Shell Command
                 if !isFlagsChanged && type == .keyDown {
                     let cmdStartIndex = map.original.to.index(map.original.to.startIndex, offsetBy: 6)
                     let cmd = String(map.original.to[cmdStartIndex...]).trimmingCharacters(in: .whitespaces)
@@ -622,59 +687,51 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                     activeRemaps[rawKeyCode] = 0 // Track so KeyUp is swallowed smoothly
                 }
                 return true
-            }
-            
-            let extraFlags = coreEventFlags.subtracting(map.fromCoreFlags)
-            var newCoreFlags = map.toCoreFlags
-            newCoreFlags.formUnion(extraFlags)
-            
-            var finalFlags = originalFlags
-            finalFlags.remove([.maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn, .maskNumericPad])
-            finalFlags.formUnion(newCoreFlags)
-            
-            let navKeys: Set<CGKeyCode> = [114, 115, 119, 116, 121, 123, 124, 125, 126, 117]
-            let fnKeys: Set<CGKeyCode> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
-            
-            if navKeys.contains(map.toKeyCode) || fnKeys.contains(map.toKeyCode) {
-                finalFlags.insert(.maskSecondaryFn)
-            }
-            if navKeys.contains(map.toKeyCode) {
-                finalFlags.insert(.maskNumericPad)
-            }
-            
-            if isFlagsChanged {
-                var isPress = false
-                switch rawKeyCode {
-                case 56, 60: isPress = originalFlags.contains(.maskShift)
-                case 59, 62: isPress = originalFlags.contains(.maskControl)
-                case 58, 61: isPress = originalFlags.contains(.maskAlternate)
-                case 55, 54: isPress = originalFlags.contains(.maskCommand)
-                default: break
+            } else {
+                // Map to Standard Key
+                let navKeys: Set<CGKeyCode> = [114, 115, 119, 116, 121, 123, 124, 125, 126, 117]
+                let fnKeys: Set<CGKeyCode> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
+                
+                if navKeys.contains(map.toKeyCode) || fnKeys.contains(map.toKeyCode) {
+                    finalFlags.insert(.maskSecondaryFn)
+                }
+                if navKeys.contains(map.toKeyCode) {
+                    finalFlags.insert(.maskNumericPad)
                 }
                 
-                if isPress {
-                    let source = CGEventSource(stateID: .hidSystemState)
-                    if let down = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: true),
-                       let up = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: false) {
-                        down.flags = finalFlags
-                        up.flags = finalFlags
-                        down.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
-                        up.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
-                        down.post(tap: .cghidEventTap)
-                        up.post(tap: .cghidEventTap)
+                if isFlagsChanged {
+                    var isPress = false
+                    switch rawKeyCode {
+                    case 56, 60: isPress = originalFlags.contains(.maskShift)
+                    case 59, 62: isPress = originalFlags.contains(.maskControl)
+                    case 58, 61: isPress = originalFlags.contains(.maskAlternate)
+                    case 55, 54: isPress = originalFlags.contains(.maskCommand)
+                    default: break
                     }
+                    
+                    if isPress {
+                        let source = CGEventSource(stateID: .hidSystemState)
+                        if let down = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: true),
+                           let up = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: false) {
+                            down.flags = finalFlags
+                            up.flags = finalFlags
+                            down.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                            up.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                            down.post(tap: .cghidEventTap)
+                            up.post(tap: .cghidEventTap)
+                        }
+                    }
+                    return true
+                } else {
+                    activeRemaps[rawKeyCode] = map.toKeyCode
+                    let source = CGEventSource(stateID: .hidSystemState)
+                    if let newEvent = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: true) {
+                        newEvent.flags = finalFlags
+                        newEvent.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                        newEvent.post(tap: .cghidEventTap)
+                    }
+                    return true
                 }
-                return true
-            } else {
-                activeRemaps[rawKeyCode] = map.toKeyCode
-                let source = CGEventSource(stateID: .hidSystemState)
-                if let newEvent = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: true) {
-                    newEvent.flags = finalFlags
-                    newEvent.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
-                    // Post to .cghidEventTap so that it triggers System Hotkeys (like Alt+Tab, Cmd+Space) reliably
-                    newEvent.post(tap: .cghidEventTap)
-                }
-                return true
             }
         }
     }

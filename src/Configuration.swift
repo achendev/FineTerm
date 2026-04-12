@@ -47,6 +47,7 @@ struct AppConfig {
         
         // App Shortcuts
         static let customAppShortcuts = "customAppShortcuts"
+        static let skipNonRunningApps = "skipNonRunningApps"
         
         // Group Navigation Shortcuts
         static let enableNextGroupShortcut = "enableNextGroupShortcut"
@@ -115,6 +116,7 @@ struct AppConfig {
         Keys.clipboardLargeItemSizeLimitMB: 5,
         
         Keys.customAppShortcuts: customAppShortcutsData,
+        Keys.skipNonRunningApps: false,
         
         // Group Navigation Defaults (Disabled by default)
         Keys.enableNextGroupShortcut: false,

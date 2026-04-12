@@ -244,18 +244,29 @@ struct CycleWindow {
 func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApplication?) {
     let frontID = frontApp?.bundleIdentifier ?? ""
     let isDebug = UserDefaults.standard.bool(forKey: AppConfig.Keys.debugMode)
+    let skipNonRunning = UserDefaults.standard.bool(forKey: AppConfig.Keys.skipNonRunningApps)
     
-    if !validBundleIDs.contains(frontID) {
-        let targetAppID = AppFocusTracker.shared.getMostRecent(from: validBundleIDs) ?? validBundleIDs[0]
+    let workspace = NSWorkspace.shared
+    var effectiveBundleIDs = validBundleIDs
+    
+    if skipNonRunning {
+        let runningIDs = Set(workspace.runningApplications.compactMap { $0.bundleIdentifier })
+        let filtered = validBundleIDs.filter { runningIDs.contains($0) }
+        if !filtered.isEmpty {
+            effectiveBundleIDs = filtered
+        }
+    }
+    
+    if !effectiveBundleIDs.contains(frontID) {
+        let targetAppID = AppFocusTracker.shared.getMostRecent(from: effectiveBundleIDs) ?? effectiveBundleIDs[0]
         if isDebug { print("DEBUG: Switching from outside to most recent in group: \(targetAppID)") }
         activateApp(bundleID: targetAppID)
         return
     }
     
     var cycleWindows: [CycleWindow] = []
-    let workspace = NSWorkspace.shared
     
-    for (index, bundleID) in validBundleIDs.enumerated() {
+    for (index, bundleID) in effectiveBundleIDs.enumerated() {
         let apps = workspace.runningApplications.filter { $0.bundleIdentifier == bundleID }
         for app in apps {
             let pid = app.processIdentifier
@@ -322,16 +333,6 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         }
     }
     
-    if cycleWindows.isEmpty {
-        if let currentIndex = validBundleIDs.firstIndex(of: frontID) {
-            let nextAppIndex = (currentIndex + 1) % validBundleIDs.count
-            activateApp(bundleID: validBundleIDs[nextAppIndex])
-        } else {
-            if let firstID = validBundleIDs.first { activateApp(bundleID: firstID) }
-        }
-        return
-    }
-    
     cycleWindows.sort { a, b in
         if a.appIndex != b.appIndex { return a.appIndex < b.appIndex }
         if a.title != b.title { return a.title < b.title }
@@ -339,28 +340,73 @@ func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApp
         return a.frame.origin.y < b.frame.origin.y
     }
     
-    var targetIndex = 0
+    var targetIndex = -1
+    
     if let currentIndex = cycleWindows.firstIndex(where: { $0.isFocused }) {
-        targetIndex = (currentIndex + 1) % cycleWindows.count
-    } else if let frontAppIndex = validBundleIDs.firstIndex(of: frontID) {
-        let nextAppIndex = (frontAppIndex + 1) % validBundleIDs.count
-        if let firstForNextApp = cycleWindows.firstIndex(where: { $0.appIndex == nextAppIndex }) {
-            targetIndex = firstForNextApp
+        let currentWindow = cycleWindows[currentIndex]
+        let currentAppBundleID = currentWindow.app.bundleIdentifier ?? ""
+        
+        if currentIndex + 1 < cycleWindows.count {
+            let nextWindow = cycleWindows[currentIndex + 1]
+            if nextWindow.app.bundleIdentifier == currentAppBundleID {
+                targetIndex = currentIndex + 1
+            } else {
+                if let frontAppIndex = effectiveBundleIDs.firstIndex(of: currentAppBundleID) {
+                    let nextAppIndex = (frontAppIndex + 1) % effectiveBundleIDs.count
+                    let nextBundleID = effectiveBundleIDs[nextAppIndex]
+                    
+                    if let firstWindow = cycleWindows.firstIndex(where: { $0.app.bundleIdentifier == nextBundleID }) {
+                        targetIndex = firstWindow
+                    } else {
+                        activateApp(bundleID: nextBundleID)
+                        return
+                    }
+                } else {
+                    targetIndex = (currentIndex + 1) % cycleWindows.count
+                }
+            }
         } else {
-             activateApp(bundleID: validBundleIDs[nextAppIndex])
-             return
+            if let frontAppIndex = effectiveBundleIDs.firstIndex(of: currentAppBundleID) {
+                let nextAppIndex = (frontAppIndex + 1) % effectiveBundleIDs.count
+                let nextBundleID = effectiveBundleIDs[nextAppIndex]
+                
+                if let firstWindow = cycleWindows.firstIndex(where: { $0.app.bundleIdentifier == nextBundleID }) {
+                    targetIndex = firstWindow
+                } else {
+                    activateApp(bundleID: nextBundleID)
+                    return
+                }
+            } else {
+                targetIndex = 0
+            }
+        }
+    } else if let frontAppIndex = effectiveBundleIDs.firstIndex(of: frontID) {
+        let nextAppIndex = (frontAppIndex + 1) % effectiveBundleIDs.count
+        let nextBundleID = effectiveBundleIDs[nextAppIndex]
+        
+        if let firstWindow = cycleWindows.firstIndex(where: { $0.app.bundleIdentifier == nextBundleID }) {
+            targetIndex = firstWindow
+        } else {
+            activateApp(bundleID: nextBundleID)
+            return
         }
     }
     
-    let target = cycleWindows[targetIndex]
-    
-    target.app.activate(options: .activateIgnoringOtherApps)
-    let axApp = AXUIElementCreateApplication(target.app.processIdentifier)
-    AXUIElementSetAttributeValue(axApp, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-    AXUIElementSetAttributeValue(target.axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
-    AXUIElementSetAttributeValue(target.axWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-    AXUIElementPerformAction(target.axWindow, kAXRaiseAction as CFString)
-    AXUIElementSetAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, target.axWindow)
+    if targetIndex >= 0 && targetIndex < cycleWindows.count {
+        let target = cycleWindows[targetIndex]
+        
+        target.app.activate(options: .activateIgnoringOtherApps)
+        let axApp = AXUIElementCreateApplication(target.app.processIdentifier)
+        AXUIElementSetAttributeValue(axApp, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(target.axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(target.axWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        AXUIElementPerformAction(target.axWindow, kAXRaiseAction as CFString)
+        AXUIElementSetAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, target.axWindow)
+    } else {
+        if !effectiveBundleIDs.isEmpty {
+            activateApp(bundleID: effectiveBundleIDs[0])
+        }
+    }
 }
 
 func getRealFrontmostApp() -> NSRunningApplication? {

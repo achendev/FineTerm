@@ -285,6 +285,8 @@ struct AppShortcutsSettingsTab: View {
     @AppStorage(AppConfig.Keys.enableToggleGroupShortcut) private var enableToggle = false
     @AppStorage(AppConfig.Keys.toggleGroupTriggers) private var toggleGroupTriggersData: Data = Data()
     @State private var toggleTriggers: [ShortcutTrigger] = []
+    
+    @AppStorage(AppConfig.Keys.skipNonRunningApps) private var skipNonRunningApps = false
 
     var body: some View {
         ScrollView {
@@ -308,6 +310,9 @@ struct AppShortcutsSettingsTab: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Custom App Shortcuts").font(.headline)
                     Text("Bind global shortcuts to switch to any application instantly.").font(.caption).foregroundColor(.secondary)
+                    
+                    Toggle("Skip apps that are not running when cycling", isOn: $skipNonRunningApps)
+                        .padding(.top, 4)
                 }
                 
                 VStack(spacing: 16) {

@@ -50,6 +50,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         // 10. Start App Focus Tracker
         AppFocusTracker.shared.start()
+        
+        // 11. Apply System Modifier Swap (if enabled)
+        SystemModifierManager.applyCurrentSettings()
     }
     
     func setupTerminalObserver() {
@@ -344,6 +347,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         keyboardInterceptor?.stop()
         clipboardStore.stopMonitoring()
         terminalObserver?.stop()
+        
+        SystemModifierManager.reset()
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

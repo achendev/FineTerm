@@ -46,6 +46,12 @@ struct AppConfig {
         static let customAppShortcuts = "customAppShortcuts"
         static let skipNonRunningApps = "skipNonRunningApps"
         
+        static let systemModifierSwapEnabled = "systemModifierSwapEnabled"
+        static let systemModifierMapFn = "systemModifierMapFn"
+        static let systemModifierMapCtrl = "systemModifierMapCtrl"
+        static let systemModifierMapOpt = "systemModifierMapOpt"
+        static let systemModifierMapCmd = "systemModifierMapCmd"
+        
         static let pcModeRules = "pcModeRules"
         
         static let enableNextGroupShortcut = "enableNextGroupShortcut"
@@ -198,6 +204,13 @@ struct AppConfig {
         
         Keys.customAppShortcuts: customAppShortcutsData,
         Keys.skipNonRunningApps: false,
+        
+        Keys.systemModifierSwapEnabled: false,
+        Keys.systemModifierMapFn: "globe",
+        Keys.systemModifierMapCtrl: "control",
+        Keys.systemModifierMapOpt: "option",
+        Keys.systemModifierMapCmd: "command",
+        
         Keys.pcModeRules: pcModeRulesData,
         
         Keys.enableNextGroupShortcut: false,

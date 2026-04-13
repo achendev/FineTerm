@@ -109,8 +109,30 @@ struct PCModeRuleRowView: View {
     }
 }
 
+struct ModifiersPickerView: View {
+    @Binding var selection: String
+    
+    var body: some View {
+        Picker("", selection: $selection) {
+            Text("Globe / Fn").tag("globe")
+            Text("Control").tag("control")
+            Text("Option").tag("option")
+            Text("Command").tag("command")
+        }
+        .labelsHidden()
+        .frame(maxWidth: 140, alignment: .trailing)
+    }
+}
+
 struct PCModeSettingsTab: View {
     @AppStorage(AppConfig.Keys.pcModeRules) private var pcModeRulesData: Data = AppConfig.pcModeRulesData
+    
+    @AppStorage(AppConfig.Keys.systemModifierSwapEnabled) private var systemModifierSwapEnabled = false
+    @AppStorage(AppConfig.Keys.systemModifierMapFn) private var mapFn = "globe"
+    @AppStorage(AppConfig.Keys.systemModifierMapCtrl) private var mapCtrl = "control"
+    @AppStorage(AppConfig.Keys.systemModifierMapOpt) private var mapOpt = "option"
+    @AppStorage(AppConfig.Keys.systemModifierMapCmd) private var mapCmd = "command"
+    
     @State private var rules: [PCModeRule] = []
     @StateObject private var appListService = AppListService.shared
     @State private var saveTask: DispatchWorkItem?
@@ -118,6 +140,54 @@ struct PCModeSettingsTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Toggle("System Hardware Modifier Override", isOn: $systemModifierSwapEnabled)
+                            .font(.headline)
+                            .onChange(of: systemModifierSwapEnabled) { _ in updateModifiers() }
+                    }
+                    
+                    Text("Re-wires hardware keys instantly in-memory. Resets on App Quit. This bypasses System Settings safely.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    if systemModifierSwapEnabled {
+                        Divider()
+                        
+                        VStack(spacing: 8) {
+                            HStack {
+                                Text("Globe (🌐) key")
+                                Spacer()
+                                ModifiersPickerView(selection: $mapFn).onChange(of: mapFn) { _ in updateModifiers() }
+                            }
+                            HStack {
+                                Text("Control (⌃) key")
+                                Spacer()
+                                ModifiersPickerView(selection: $mapCtrl).onChange(of: mapCtrl) { _ in updateModifiers() }
+                            }
+                            HStack {
+                                Text("Option (⌥) key")
+                                Spacer()
+                                ModifiersPickerView(selection: $mapOpt).onChange(of: mapOpt) { _ in updateModifiers() }
+                            }
+                            HStack {
+                                Text("Command (⌘) key")
+                                Spacer()
+                                ModifiersPickerView(selection: $mapCmd).onChange(of: mapCmd) { _ in updateModifiers() }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .padding()
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+                
+                Divider()
+                
                 VStack(alignment: .leading, spacing: 4) {
                     Text("PC Mode Remapping").font(.headline)
                     Text("Format: 'modifier + key'. Valid Modifiers: cmd, ctrl, opt, shift.\nSequences: Separate multiple actions with commas (e.g. 'ctrl + a, n').\nSpecial Keys: left_arrow, home, delete_or_backspace, spacebar.\nCommands: Use 'shell: open ...' in the 'to' field to execute terminal commands.")
@@ -174,6 +244,10 @@ struct PCModeSettingsTab: View {
         .onChange(of: rules) { newValue in
             saveThrottled(newValue)
         }
+    }
+    
+    private func updateModifiers() {
+        SystemModifierManager.applyCurrentSettings()
     }
     
     private func load() {

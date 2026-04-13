@@ -20,11 +20,40 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
         return Unmanaged.passUnretained(event)
     }
     
+    // Safety Net: Prevent infinite loops from our own synthesized CGEvents
+    if event.getIntegerValueField(.eventSourceUserData) == magicEventSourceUserData {
+        return Unmanaged.passUnretained(event)
+    }
+    
+    let frontApp = NSWorkspace.shared.frontmostApplication
+    let frontAppID = frontApp?.bundleIdentifier ?? ""
+    
+    // 1. Process PC Mode Rules for Mouse Buttons
+    var virtualKeyCode: Int64? = nil
+    var isMousePress: Bool? = nil
+
+    switch type {
+    case .leftMouseDown: virtualKeyCode = 2001; isMousePress = true
+    case .leftMouseUp: virtualKeyCode = 2001; isMousePress = false
+    case .rightMouseDown: virtualKeyCode = 2002; isMousePress = true
+    case .rightMouseUp: virtualKeyCode = 2002; isMousePress = false
+    case .otherMouseDown: virtualKeyCode = 2003; isMousePress = true
+    case .otherMouseUp: virtualKeyCode = 2003; isMousePress = false
+    default: break
+    }
+
+    if let vk = virtualKeyCode, let press = isMousePress {
+        let effectiveType: CGEventType = press ? .keyDown : .keyUp
+        let wasSwallowed = PCModeProcessor.shared.process(type: effectiveType, keyCode: vk, flags: event.flags, event: event, frontAppID: frontAppID)
+        if wasSwallowed {
+            return nil
+        }
+    }
+    
     let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
     
     // Check if Terminal is active (frontmost)
-    guard let frontApp = NSWorkspace.shared.frontmostApplication,
-          frontApp.bundleIdentifier == target else {
+    guard frontAppID == target else {
         return Unmanaged.passUnretained(event)
     }
     
@@ -65,7 +94,7 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
         }
     }
 
-    // 1. Handle Right Click -> Paste (Cmd+V)
+    // 2. Handle Right Click -> Paste (Cmd+V)
     if type == .rightMouseDown {
         if UserDefaults.standard.bool(forKey: "pasteOnRightClick") {
             // Only paste if click is strictly on a Terminal window
@@ -85,6 +114,9 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
                 cmdDown.flags = .maskCommand
                 cmdUp.flags = .maskCommand
                 
+                cmdDown.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                cmdUp.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                
                 cmdDown.post(tap: .cghidEventTap)
                 cmdUp.post(tap: .cghidEventTap)
             }
@@ -93,7 +125,7 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
         return Unmanaged.passUnretained(event)
     }
     
-    // 2. Track Mouse Down
+    // 3. Track Mouse Down
     if type == .leftMouseDown {
         if isClickInTerminalWindow(event.location) {
             lastMouseDownPoint = event.location
@@ -103,7 +135,7 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
         return Unmanaged.passUnretained(event)
     }
     
-    // 3. Handle Left Mouse Up -> Copy (Cmd+C)
+    // 4. Handle Left Mouse Up -> Copy (Cmd+C)
     if type == .leftMouseUp {
         if !UserDefaults.standard.bool(forKey: "copyOnSelect") {
              return Unmanaged.passUnretained(event)
@@ -145,6 +177,9 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
                         cmdDown.flags = .maskCommand
                         cmdUp.flags = .maskCommand
                         
+                        cmdDown.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                        cmdUp.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                        
                         cmdDown.post(tap: .cghidEventTap)
                         cmdUp.post(tap: .cghidEventTap)
                         
@@ -166,10 +201,13 @@ class MouseInterceptor {
     var runLoopSource: CFRunLoopSource?
 
     func start() {
-        // Listen for Down, Up, and Right Click
-        let eventMask = (1 << CGEventType.leftMouseUp.rawValue) | 
+        // Listen for Down, Up, and Right/Other Clicks
+        let eventMask = (1 << CGEventType.leftMouseDown.rawValue) | 
+                        (1 << CGEventType.leftMouseUp.rawValue) | 
                         (1 << CGEventType.rightMouseDown.rawValue) |
-                        (1 << CGEventType.leftMouseDown.rawValue)
+                        (1 << CGEventType.rightMouseUp.rawValue) |
+                        (1 << CGEventType.otherMouseDown.rawValue) |
+                        (1 << CGEventType.otherMouseUp.rawValue)
         
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,

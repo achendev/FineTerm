@@ -65,9 +65,7 @@ class PCModeProcessor {
                 }
                 return true // Swallow original KeyUp / Modifier Release so OS doesn't receive partial keys
             }
-            if type == .keyUp {
-                return false // Was not remapped, let normal keyUp pass through
-            }
+            return false 
         }
 
         // 2. Process Rules for KeyDown and FlagsChanged (Presses)
@@ -162,25 +160,40 @@ class PCModeProcessor {
 
                     if shouldExecute {
                         for action in map.toActions {
-                            var finalFlags = action.coreFlags
-                            let navKeys: Set<CGKeyCode> = [114, 115, 119, 116, 121, 123, 124, 125, 126, 117]
-                            let fnKeys: Set<CGKeyCode> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
-                            if navKeys.contains(action.keyCode) || fnKeys.contains(action.keyCode) { finalFlags.insert(.maskSecondaryFn) }
-                            if navKeys.contains(action.keyCode) { finalFlags.insert(.maskNumericPad) }
+                            if action.keyCode >= 2000 {
+                                let btn = Int32(action.keyCode - 2000)
+                                KeyboardEventInjector.postMouseEvent(button: btn, isDown: true)
+                                usleep(1000)
+                                KeyboardEventInjector.postMouseEvent(button: btn, isDown: false)
+                                usleep(1000)
+                            } else if action.keyCode >= 1000 {
+                                let mediaKey = Int32(action.keyCode - 1000)
+                                let finalFlags = action.coreFlags
+                                KeyboardEventInjector.postMediaKeyEvent(mediaKey: mediaKey, isDown: true, flags: finalFlags)
+                                usleep(1000)
+                                KeyboardEventInjector.postMediaKeyEvent(mediaKey: mediaKey, isDown: false, flags: finalFlags)
+                                usleep(1000)
+                            } else {
+                                var finalFlags = action.coreFlags
+                                let navKeys: Set<CGKeyCode> = [114, 115, 119, 116, 121, 123, 124, 125, 126, 117]
+                                let fnKeys: Set<CGKeyCode> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
+                                if navKeys.contains(action.keyCode) || fnKeys.contains(action.keyCode) { finalFlags.insert(.maskSecondaryFn) }
+                                if navKeys.contains(action.keyCode) { finalFlags.insert(.maskNumericPad) }
 
-                            let source = CGEventSource(stateID: .hidSystemState)
-                            if let down = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: true) {
-                                down.flags = finalFlags
-                                down.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
-                                down.post(tap: .cghidEventTap)
+                                let source = CGEventSource(stateID: .hidSystemState)
+                                if let down = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: true) {
+                                    down.flags = finalFlags
+                                    down.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                                    down.post(tap: .cghidEventTap)
+                                }
+                                usleep(1000)
+                                if let up = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: false) {
+                                    up.flags = finalFlags
+                                    up.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                                    up.post(tap: .cghidEventTap)
+                                }
+                                usleep(1000)
                             }
-                            usleep(1000)
-                            if let up = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: false) {
-                                up.flags = finalFlags
-                                up.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
-                                up.post(tap: .cghidEventTap)
-                            }
-                            usleep(1000)
                         }
                         activeRemaps[rawKeyCode] = (keyCode: 0, flags: []) // Swallow subsequent KeyUp/ModRelease of original trigger
                     }
@@ -220,7 +233,10 @@ class PCModeProcessor {
                         activeRemaps[rawKeyCode] = (keyCode: action.keyCode, flags: finalFlags)
                         
                         // Filter keyboard autorepeats for mouse buttons
-                        let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                        var isRepeat = false
+                        if rawKeyCode < 2000 {
+                            isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                        }
                         if !isRepeat {
                             KeyboardEventInjector.postMouseEvent(button: btn, isDown: true)
                         }

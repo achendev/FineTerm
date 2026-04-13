@@ -10,6 +10,8 @@ struct SystemModifierManager {
     // Right Option: 0x7000000E6
     // Right Command:0x7000000E7
     // Globe / Fn:   0xFF00000003
+    // F1-F12:       0x70000003A - 0x700000045
+    // F13-F24:      0x700000068 - 0x700000073
     
     static func applyCurrentSettings() {
         let enabled = UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled)
@@ -27,16 +29,23 @@ struct SystemModifierManager {
         var mappings: [String] = []
         
         func getDst(for target: String, isRight: Bool) -> Int {
+            if target.hasPrefix("f"), let fNum = Int(target.dropFirst()) {
+                if fNum >= 1 && fNum <= 12 {
+                    return 0x70000003A + fNum - 1
+                } else if fNum >= 13 && fNum <= 24 {
+                    // macOS WindowServer drops HID usages for F21-F24 because there are no CGKeyCodes for them.
+                    // We secretly alias F21-F24 to F17-F20 hardware keys so they reliably reach the CGEventTap.
+                    let adjustedNum = fNum > 20 ? fNum - 4 : fNum
+                    return 0x700000068 + adjustedNum - 13
+                }
+            }
+            
             switch target {
             case "globe": return 0xFF00000003
             case "control": return isRight ? 0x7000000E4 : 0x7000000E0
             case "option": return isRight ? 0x7000000E6 : 0x7000000E2
             case "command": return isRight ? 0x7000000E7 : 0x7000000E3
             case "capslock": return 0x700000039
-            // Mouse button mapping hack: Map to unused F-keys F20, F19, F18 which are intercepted locally
-            case "button1": return 0x70000006F // F20
-            case "button2": return 0x70000006E // F19
-            case "button3": return 0x70000006D // F18
             default: return 0
             }
         }

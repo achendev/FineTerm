@@ -29,11 +29,11 @@ struct WindowCycleService {
             window.makeKeyAndOrderFront(nil)
             window.orderFrontRegardless()
             NSApp.activate(ignoringOtherApps: true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
                 NSApp.activate(ignoringOtherApps: true)
                 window.makeKeyAndOrderFront(nil)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
                 if !NSApp.isActive {
                     NSApp.activate(ignoringOtherApps: true)
                     window.makeKeyAndOrderFront(nil)

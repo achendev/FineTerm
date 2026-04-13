@@ -4,7 +4,8 @@ import ApplicationServices
 class PCModeProcessor {
     static let shared = PCModeProcessor()
     
-    var activeRemaps: [CGKeyCode: CGKeyCode] = [:]
+    // CRITICAL FIX: We now store the exact flags used during the initial key press so we can restore them on release
+    var activeRemaps: [CGKeyCode: (keyCode: CGKeyCode, flags: CGEventFlags)] = [:]
     
     func reset() {
         activeRemaps.removeAll()
@@ -33,19 +34,25 @@ class PCModeProcessor {
         }
         
         if isRelease {
-            if let mappedTo = activeRemaps[rawKeyCode] {
+            if let mapping = activeRemaps[rawKeyCode] {
                 activeRemaps.removeValue(forKey: rawKeyCode)
+                let mappedTo = mapping.keyCode
+                let mappedFlags = mapping.flags
                 
                 if mappedTo >= 2000 {
                     let btn = Int32(mappedTo - 2000)
                     KeyboardEventInjector.postMouseEvent(button: btn, isDown: false)
                 } else if mappedTo >= 1000 {
                     let mediaKey = Int32(mappedTo - 1000)
-                    KeyboardEventInjector.postMediaKeyEvent(mediaKey: mediaKey, isDown: false, flags: flags)
+                    KeyboardEventInjector.postMediaKeyEvent(mediaKey: mediaKey, isDown: false, flags: mappedFlags)
                 } else if mappedTo != 0 {
                     let source = CGEventSource(stateID: .hidSystemState)
                     if let newEvent = CGEvent(keyboardEventSource: source, virtualKey: mappedTo, keyDown: false) {
                         var finalFlags = flags
+                        
+                        // RESTORE the modifiers that were present during the keyDown event
+                        finalFlags.formUnion(mappedFlags)
+                        
                         let navKeys: Set<CGKeyCode> = [114, 115, 119, 116, 121, 123, 124, 125, 126, 117]
                         let fnKeys: Set<CGKeyCode> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
                         if navKeys.contains(mappedTo) || fnKeys.contains(mappedTo) { finalFlags.insert(.maskSecondaryFn) }
@@ -130,7 +137,7 @@ class PCModeProcessor {
                             task.arguments = ["-c", cmd]
                             try? task.run()
                         }
-                        activeRemaps[rawKeyCode] = 0 // Track so KeyUp/ModRelease is swallowed smoothly
+                        activeRemaps[rawKeyCode] = (keyCode: 0, flags: []) // Track so KeyUp/ModRelease is swallowed smoothly
                     }
                     return true
                 }
@@ -175,7 +182,7 @@ class PCModeProcessor {
                             }
                             usleep(1000)
                         }
-                        activeRemaps[rawKeyCode] = 0 // Swallow subsequent KeyUp/ModRelease of original trigger
+                        activeRemaps[rawKeyCode] = (keyCode: 0, flags: []) // Swallow subsequent KeyUp/ModRelease of original trigger
                     }
                     return true
                 }
@@ -210,7 +217,7 @@ class PCModeProcessor {
                         }
                         return true
                     } else {
-                        activeRemaps[rawKeyCode] = action.keyCode
+                        activeRemaps[rawKeyCode] = (keyCode: action.keyCode, flags: finalFlags)
                         
                         // Filter keyboard autorepeats for mouse buttons
                         let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
@@ -238,7 +245,7 @@ class PCModeProcessor {
                         }
                         return true
                     } else {
-                        activeRemaps[rawKeyCode] = action.keyCode
+                        activeRemaps[rawKeyCode] = (keyCode: action.keyCode, flags: finalFlags)
                         KeyboardEventInjector.postMediaKeyEvent(mediaKey: mediaKey, isDown: true, flags: finalFlags)
                         return true
                     }
@@ -269,7 +276,7 @@ class PCModeProcessor {
                         }
                         
                         if isPress {
-                            activeRemaps[rawKeyCode] = action.keyCode // Ensures Un-stick logic catches release
+                            activeRemaps[rawKeyCode] = (keyCode: action.keyCode, flags: finalFlags) // Ensures Un-stick logic catches release
                             
                             let source = CGEventSource(stateID: .hidSystemState)
                             if let down = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: true) {
@@ -289,7 +296,7 @@ class PCModeProcessor {
                         }
                         return true
                     } else {
-                        activeRemaps[rawKeyCode] = action.keyCode
+                        activeRemaps[rawKeyCode] = (keyCode: action.keyCode, flags: finalFlags)
                         let source = CGEventSource(stateID: .hidSystemState)
                         if let newEvent = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: true) {
                             newEvent.flags = finalFlags

@@ -111,7 +111,6 @@ struct PCModeRuleRowView: View {
 
 struct ModifiersPickerView: View {
     @Binding var selection: String
-    var includeMouse: Bool = false
     
     var body: some View {
         Picker("", selection: $selection) {
@@ -121,11 +120,9 @@ struct ModifiersPickerView: View {
             Text("Command").tag("command")
             Text("Caps Lock").tag("capslock")
             
-            if includeMouse {
-                Divider()
-                Text("Left Click").tag("button1")
-                Text("Right Click").tag("button2")
-                Text("Middle Click").tag("button3")
+            Divider()
+            ForEach(1...24, id: \.self) { i in
+                Text("F\(i)").tag("f\(i)")
             }
         }
         .labelsHidden()
@@ -190,7 +187,7 @@ struct PCModeSettingsTab: View {
                             HStack {
                                 Text("Caps Lock (⇪) key")
                                 Spacer()
-                                ModifiersPickerView(selection: $mapCapsLock, includeMouse: true).onChange(of: mapCapsLock) { _ in updateModifiers() }
+                                ModifiersPickerView(selection: $mapCapsLock).onChange(of: mapCapsLock) { _ in updateModifiers() }
                             }
                         }
                         .padding(.vertical, 4)

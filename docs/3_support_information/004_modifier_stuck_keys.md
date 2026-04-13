@@ -1,12 +1,14 @@
-# Support: Stuck Keys on Modifier-Only Shortcuts
+# Support: Stuck Keys & Strict Apps (Modifiers on KeyUp)
 
 ## 1. Symptom Description
-*   **User Report:** "When I map `opt + shift` to `ctrl + opt + space` (e.g. for a language switch), it works once, but then gets stuck. I have to press the keys physically to unstick it."
-*   **Context:** Occurs specifically when a trigger definition relies purely on modifier keys (like `opt + shift`) instead of standard keys (like `ctrl + c`), combined with a mapping output to a standard key.
+*   **User Report:** "When I map `Caps Lock` to `F20`, and then map `F20` to `Cmd + V`, it works in some apps but not in Terminal or Chrome."
+*   **Context:** Occurs specifically when a trigger relies on an overridden modifier key that executes a shortcut (like `Cmd + C` or `Cmd + V`), and the target application is very strict about input event sequences.
 
 ## 2. Root Cause Analysis
-*   **Cause:** When pressing purely modifier-based triggers, macOS posts `.flagsChanged` events rather than `.keyDown` events. Previously, the `KeyboardInterceptor` correctly identified the modifier press and dispatched a mapped `.keyDown` for the target standard key (e.g., `space`), but it lacked logic to detect the modifier *release* and dispatch the corresponding `.keyUp`. This left the `space` key physically "pressed" globally in the macOS Window Server's eyes.
-*   **Why it wasn't caught:** Standard bindings (like `ctrl + c`) utilize standard `.keyUp` events for their releases, which had functioning tracker logic (`activeRemaps`) to intercept and unstick correctly.
+*   **Cause:** Strict apps (like Chrome, Terminal) validate the modifier state of both the `keyDown` and `keyUp` events. Previously, `PCModeProcessor` successfully attached the `Command` modifier to the `keyDown` event for `v`, but when the user released the key, it sent a `keyUp` for `v` *without* the `Command` modifier. The app sees "Cmd + V down, V up without Cmd" and cancels the paste operation.
+*   **Why it wasn't caught:** Native macOS apps (like TextEdit) only care about the `keyDown` event for triggering shortcuts and ignore the malformed `keyUp`.
 
 ## 3. Resolution
-*   **Code Fix:** Implemented robust "Un-stick" logic for modifier releases inside `processPCModeRules`. The code now tracks mappings initiated by `.flagsChanged` and actively monitors when those specific modifier flags are lifted. Once the flag goes down (e.g., the user lifts their finger off the `Shift` key), it dynamically retrieves the mapped key from `activeRemaps` and instantly fires the exact required `.keyUp` event to release it properly into the system event stream.
+*   **Code Fix:** Implemented exact `CGEventFlags` retention inside `PCModeProcessor.activeRemaps`. 
+*   When a rule fires, the processor stores a tuple of both the mapped `keyCode` and the exact `flags` used.
+*   When the trigger key is released, it retrieves this tuple and forcefully applies the exact same modifier flags to the injected `.keyUp` event, ensuring the Window Server receives a perfectly symmetrical press/release sequence.

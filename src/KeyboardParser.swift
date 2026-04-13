@@ -24,6 +24,8 @@ struct KeyboardParser {
         "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
         "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
         "f13": 105, "f14": 107, "f15": 113, "f16": 106, "f17": 64, "f18": 79, "f19": 80, "f20": 90,
+        // Aliasing F21-F24 to F17-F20 as safety nets since macOS drops actual F21-F24 HID events
+        "f21": 64, "f22": 79, "f23": 80, "f24": 90,
         "hyphen": 27, "equal_sign": 24, "slash": 44, "backslash": 42,
         "left_shift": 56, "right_shift": 60, "left_control": 59, "right_control": 62,
         "left_option": 58, "right_option": 61, "left_command": 55, "right_command": 54,

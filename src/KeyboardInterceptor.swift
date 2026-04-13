@@ -67,37 +67,6 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return Unmanaged.passUnretained(event)
     }
     
-    // --- SPECIAL CAPS LOCK -> MOUSE BUTTON HYBRID HOOK ---
-    // If hidutil mapped Caps Lock to F20-F18 to simulate mouse clicks, catch it here.
-    if UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) {
-        let capsTarget = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapCapsLock) ?? "capslock"
-        if capsTarget.hasPrefix("button") {
-            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            
-            // F20 = 90, F19 = 80, F18 = 79
-            if (capsTarget == "button1" && keyCode == 90) ||
-               (capsTarget == "button2" && keyCode == 80) ||
-               (capsTarget == "button3" && keyCode == 79) {
-                
-                let btnStr = capsTarget.replacingOccurrences(of: "button", with: "")
-                let btn = Int32(btnStr) ?? 1
-                
-                // Keyboard repeats generate spammy MouseDown events, filtering them ensures proper dragging behavior
-                let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-                
-                if type == .keyDown {
-                    if !isRepeat {
-                        KeyboardEventInjector.postMouseEvent(button: btn, isDown: true)
-                    }
-                    return nil // Swallow event
-                } else if type == .keyUp {
-                    KeyboardEventInjector.postMouseEvent(button: btn, isDown: false)
-                    return nil // Swallow event
-                }
-            }
-        }
-    }
-    
     // Evaluate possible System Defined Events (Media Keys translated to F-keys)
     var effectiveType = type
     var effectiveKeyCode = event.getIntegerValueField(.keyboardEventKeycode)

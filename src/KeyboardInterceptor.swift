@@ -10,13 +10,19 @@ private var lastUsedShortcutID: UUID?
 private let magicEventSourceUserData: Int64 = 0x46696E65 // "Fine"
 
 // Optimized Cache Structures
+struct ParsedToAction {
+    let keyCode: CGKeyCode
+    let coreFlags: CGEventFlags
+}
+
 struct ParsedKeyMap {
     let original: KeyMap
     let fromKeyCode: CGKeyCode
     let fromCoreFlags: CGEventFlags
     let fromStrictFlags: [String]
-    let toKeyCode: CGKeyCode
-    let toCoreFlags: CGEventFlags
+    let isShell: Bool
+    let shellCommand: String?
+    let toActions: [ParsedToAction]
 }
 
 struct ParsedPCModeRule {
@@ -53,13 +59,23 @@ fileprivate func refreshCustomShortcutsCache() {
                 guard !fromParsed.key.isEmpty else { continue }
                 guard let fromCode = KeyboardInterceptor.getKeyCode(for: fromParsed.key) else { continue }
                 
-                let toParsed = KeyboardInterceptor.parseKeyString(map.to)
-                guard !toParsed.key.isEmpty else { continue }
+                var isShell = false
+                var shellCommand: String? = nil
+                var toActions: [ParsedToAction] = []
                 
-                var toCode: CGKeyCode = 0
-                if !toParsed.key.lowercased().hasPrefix("shell:") {
-                    guard let c = KeyboardInterceptor.getKeyCode(for: toParsed.key) else { continue }
-                    toCode = c
+                if map.to.lowercased().hasPrefix("shell:") {
+                    isShell = true
+                    let cmdStartIndex = map.to.index(map.to.startIndex, offsetBy: 6)
+                    shellCommand = String(map.to[cmdStartIndex...]).trimmingCharacters(in: .whitespaces)
+                } else {
+                    let parts = map.to.components(separatedBy: ",")
+                    for part in parts {
+                        let toParsed = KeyboardInterceptor.parseKeyString(part)
+                        guard !toParsed.key.isEmpty else { continue }
+                        guard let code = KeyboardInterceptor.getKeyCode(for: toParsed.key) else { continue }
+                        toActions.append(ParsedToAction(keyCode: code, coreFlags: toParsed.coreFlags))
+                    }
+                    if toActions.isEmpty { continue }
                 }
                 
                 parsedMappings.append(ParsedKeyMap(
@@ -67,8 +83,9 @@ fileprivate func refreshCustomShortcutsCache() {
                     fromKeyCode: fromCode, 
                     fromCoreFlags: fromParsed.coreFlags, 
                     fromStrictFlags: fromParsed.strictFlags, 
-                    toKeyCode: toCode, 
-                    toCoreFlags: toParsed.coreFlags
+                    isShell: isShell,
+                    shellCommand: shellCommand,
+                    toActions: toActions
                 ))
             }
             
@@ -607,9 +624,26 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
     let isFlagsChanged = (type == .flagsChanged)
     let rawKeyCode = CGKeyCode(keyCode)
     
-    // 1. Un-stick Logic for KeyUp
-    // Guarantees that if a physical key went down and was remapped, its corresponding keyUp will release the remapped key
+    // 1. Un-stick Logic for KeyUp OR Modifier Release
+    // This solves the bug where mapping `opt + shift` leaves mapped standard keys permanently "pressed"
+    var isRelease = false
     if type == .keyUp {
+        isRelease = true
+    } else if isFlagsChanged {
+        var isPress = false
+        switch rawKeyCode {
+        case 56, 60: isPress = flags.contains(.maskShift)
+        case 59, 62: isPress = flags.contains(.maskControl)
+        case 58, 61: isPress = flags.contains(.maskAlternate)
+        case 55, 54: isPress = flags.contains(.maskCommand)
+        default: isPress = true // assume press for unknown modifiers to avoid accidental un-stick fallthrough
+        }
+        if !isPress {
+            isRelease = true
+        }
+    }
+    
+    if isRelease {
         if let mappedTo = activeRemaps[rawKeyCode] {
             activeRemaps.removeValue(forKey: rawKeyCode)
             
@@ -633,12 +667,15 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                     newEvent.post(tap: .cghidEventTap)
                 }
             }
-            return true // Swallow original KeyUp
+            return true // Swallow original KeyUp / Modifier Release so OS doesn't receive partial keys
         }
-        return false // Was not remapped on down, let pass through normally
+        if type == .keyUp {
+            return false // Was not remapped, let normal keyUp pass through
+        }
+        // If it's a modifier release that wasn't remapped, it just falls through to allow normal evaluation
     }
 
-    // 2. Process Rules for KeyDown and FlagsChanged
+    // 2. Process Rules for KeyDown and FlagsChanged (Presses)
     let originalFlags = flags
     
     for parsedRule in cachedParsedPCRules {
@@ -680,18 +717,42 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
             if !strictMatch { continue }
             
             // Match found!
-            let extraFlags = coreEventFlags.subtracting(map.fromCoreFlags)
-            var newCoreFlags = map.toCoreFlags
-            newCoreFlags.formUnion(extraFlags)
             
-            var finalFlags = originalFlags
-            finalFlags.remove([.maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn, .maskNumericPad])
-            finalFlags.formUnion(newCoreFlags)
-            
-            if map.toKeyCode >= 2000 {
-                // Map to Mouse Button
-                let btn = Int32(map.toKeyCode - 2000)
-                if isFlagsChanged {
+            if map.isShell {
+                var shouldExecute = false
+                if !isFlagsChanged && type == .keyDown {
+                    shouldExecute = true
+                } else if isFlagsChanged {
+                    var isPress = false
+                    switch rawKeyCode {
+                    case 56, 60: isPress = originalFlags.contains(.maskShift)
+                    case 59, 62: isPress = originalFlags.contains(.maskControl)
+                    case 58, 61: isPress = originalFlags.contains(.maskAlternate)
+                    case 55, 54: isPress = originalFlags.contains(.maskCommand)
+                    case 57: isPress = true
+                    default: break
+                    }
+                    shouldExecute = isPress
+                }
+                
+                if shouldExecute {
+                    if let cmd = map.shellCommand {
+                        let task = Process()
+                        task.launchPath = "/bin/sh"
+                        task.arguments = ["-c", cmd]
+                        try? task.run()
+                    }
+                    activeRemaps[rawKeyCode] = 0 // Track so KeyUp/ModRelease is swallowed smoothly
+                }
+                return true
+            }
+
+            if map.toActions.count > 1 {
+                // Macro Sequence Handling
+                var shouldExecute = false
+                if !isFlagsChanged && type == .keyDown {
+                    shouldExecute = true
+                } else if isFlagsChanged {
                     var isPress = false
                     switch rawKeyCode {
                     case 56, 60: isPress = originalFlags.contains(.maskShift)
@@ -701,19 +762,73 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                     case 57: isPress = true // CapsLock toggle triggers full press
                     default: break
                     }
+                    shouldExecute = isPress
+                }
+
+                if shouldExecute {
+                    for action in map.toActions {
+                        var finalFlags = action.coreFlags
+                        let navKeys: Set<CGKeyCode> = [114, 115, 119, 116, 121, 123, 124, 125, 126, 117]
+                        let fnKeys: Set<CGKeyCode> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
+                        if navKeys.contains(action.keyCode) || fnKeys.contains(action.keyCode) { finalFlags.insert(.maskSecondaryFn) }
+                        if navKeys.contains(action.keyCode) { finalFlags.insert(.maskNumericPad) }
+
+                        let source = CGEventSource(stateID: .hidSystemState)
+                        if let down = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: true) {
+                            down.flags = finalFlags
+                            down.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                            down.post(tap: .cghidEventTap)
+                        }
+                        usleep(1000)
+                        if let up = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: false) {
+                            up.flags = finalFlags
+                            up.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                            up.post(tap: .cghidEventTap)
+                        }
+                        usleep(1000)
+                    }
+                    activeRemaps[rawKeyCode] = 0 // Swallow subsequent KeyUp/ModRelease of original trigger
+                }
+                return true
+            }
+
+            // Standard Single Key Mapping
+            let action = map.toActions[0]
+            
+            let extraFlags = coreEventFlags.subtracting(map.fromCoreFlags)
+            var newCoreFlags = action.coreFlags
+            newCoreFlags.formUnion(extraFlags)
+            
+            var finalFlags = originalFlags
+            finalFlags.remove([.maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn, .maskNumericPad])
+            finalFlags.formUnion(newCoreFlags)
+            
+            if action.keyCode >= 2000 {
+                // Map to Mouse Button
+                let btn = Int32(action.keyCode - 2000)
+                if isFlagsChanged {
+                    var isPress = false
+                    switch rawKeyCode {
+                    case 56, 60: isPress = originalFlags.contains(.maskShift)
+                    case 59, 62: isPress = originalFlags.contains(.maskControl)
+                    case 58, 61: isPress = originalFlags.contains(.maskAlternate)
+                    case 55, 54: isPress = originalFlags.contains(.maskCommand)
+                    case 57: isPress = true // CapsLock
+                    default: break
+                    }
                     if isPress {
                         KeyboardInterceptor.postMouseEvent(button: btn, isDown: true)
                         KeyboardInterceptor.postMouseEvent(button: btn, isDown: false)
                     }
                     return true
                 } else {
-                    activeRemaps[rawKeyCode] = map.toKeyCode
+                    activeRemaps[rawKeyCode] = action.keyCode
                     KeyboardInterceptor.postMouseEvent(button: btn, isDown: true)
                     return true
                 }
-            } else if map.toKeyCode >= 1000 {
-                // Map to a Media Key (Volume/Brightness)
-                let mediaKey = Int32(map.toKeyCode - 1000)
+            } else if action.keyCode >= 1000 {
+                // Map to a Media Key
+                let mediaKey = Int32(action.keyCode - 1000)
                 if isFlagsChanged {
                     var isPress = false
                     switch rawKeyCode {
@@ -730,31 +845,19 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                     }
                     return true
                 } else {
-                    activeRemaps[rawKeyCode] = map.toKeyCode
+                    activeRemaps[rawKeyCode] = action.keyCode
                     KeyboardInterceptor.postMediaKeyEvent(mediaKey: mediaKey, isDown: true, flags: finalFlags)
                     return true
                 }
-            } else if map.toKeyCode == 0 && map.original.to.lowercased().hasPrefix("shell:") {
-                // Map to Shell Command
-                if !isFlagsChanged && type == .keyDown {
-                    let cmdStartIndex = map.original.to.index(map.original.to.startIndex, offsetBy: 6)
-                    let cmd = String(map.original.to[cmdStartIndex...]).trimmingCharacters(in: .whitespaces)
-                    let task = Process()
-                    task.launchPath = "/bin/sh"
-                    task.arguments = ["-c", cmd]
-                    try? task.run()
-                    activeRemaps[rawKeyCode] = 0 // Track so KeyUp is swallowed smoothly
-                }
-                return true
             } else {
                 // Map to Standard Key
                 let navKeys: Set<CGKeyCode> = [114, 115, 119, 116, 121, 123, 124, 125, 126, 117]
                 let fnKeys: Set<CGKeyCode> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
                 
-                if navKeys.contains(map.toKeyCode) || fnKeys.contains(map.toKeyCode) {
+                if navKeys.contains(action.keyCode) || fnKeys.contains(action.keyCode) {
                     finalFlags.insert(.maskSecondaryFn)
                 }
-                if navKeys.contains(map.toKeyCode) {
+                if navKeys.contains(action.keyCode) {
                     finalFlags.insert(.maskNumericPad)
                 }
                 
@@ -773,15 +876,18 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                     }
                     
                     if isPress {
+                        activeRemaps[rawKeyCode] = action.keyCode // Ensures Un-stick logic catches release
+                        
                         let source = CGEventSource(stateID: .hidSystemState)
-                        if let down = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: true) {
+                        if let down = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: true) {
                             down.flags = finalFlags
                             down.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
                             down.post(tap: .cghidEventTap)
                         }
-                        // CapsLock doesn't naturally send an "Up" flagsChanged event. We must auto-release.
+                        // CapsLock doesn't fire naturally on release
                         if isCapsLock {
-                            if let up = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: false) {
+                            activeRemaps.removeValue(forKey: rawKeyCode)
+                            if let up = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: false) {
                                 up.flags = finalFlags
                                 up.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
                                 up.post(tap: .cghidEventTap)
@@ -790,12 +896,11 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                     }
                     return true
                 } else {
-                    activeRemaps[rawKeyCode] = map.toKeyCode
+                    activeRemaps[rawKeyCode] = action.keyCode
                     let source = CGEventSource(stateID: .hidSystemState)
-                    if let newEvent = CGEvent(keyboardEventSource: source, virtualKey: map.toKeyCode, keyDown: true) {
+                    if let newEvent = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: true) {
                         newEvent.flags = finalFlags
                         newEvent.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
-                        // Post to .cghidEventTap so that it triggers System Hotkeys (like Alt+Tab, Cmd+Space) reliably
                         newEvent.post(tap: .cghidEventTap)
                     }
                     return true

@@ -168,9 +168,9 @@ struct PCModeSettingsTab: View {
                         
                         VStack(spacing: 8) {
                             HStack {
-                                Text("Caps Lock (⇪) key")
+                                Text("Globe (🌐) key")
                                 Spacer()
-                                ModifiersPickerView(selection: $mapCapsLock, includeMouse: true).onChange(of: mapCapsLock) { _ in updateModifiers() }
+                                ModifiersPickerView(selection: $mapFn).onChange(of: mapFn) { _ in updateModifiers() }
                             }
                             HStack {
                                 Text("Control (⌃) key")
@@ -178,22 +178,36 @@ struct PCModeSettingsTab: View {
                                 ModifiersPickerView(selection: $mapCtrl).onChange(of: mapCtrl) { _ in updateModifiers() }
                             }
                             HStack {
-                                Text("Option (⌥) key")
-                                Spacer()
-                                ModifiersPickerView(selection: $mapOpt).onChange(of: mapOpt) { _ in updateModifiers() }
-                            }
-                            HStack {
                                 Text("Command (⌘) key")
                                 Spacer()
                                 ModifiersPickerView(selection: $mapCmd).onChange(of: mapCmd) { _ in updateModifiers() }
                             }
                             HStack {
-                                Text("Globe (🌐) key")
+                                Text("Option (⌥) key")
                                 Spacer()
-                                ModifiersPickerView(selection: $mapFn).onChange(of: mapFn) { _ in updateModifiers() }
+                                ModifiersPickerView(selection: $mapOpt).onChange(of: mapOpt) { _ in updateModifiers() }
+                            }
+                            HStack {
+                                Text("Caps Lock (⇪) key")
+                                Spacer()
+                                ModifiersPickerView(selection: $mapCapsLock, includeMouse: true).onChange(of: mapCapsLock) { _ in updateModifiers() }
                             }
                         }
                         .padding(.vertical, 4)
+                        
+                        HStack {
+                            Spacer()
+                            Button("Restore Defaults") {
+                                mapFn = "control"
+                                mapCtrl = "globe"
+                                mapCmd = "option"
+                                mapOpt = "command"
+                                mapCapsLock = "capslock"
+                                systemModifierSwapEnabled = false
+                                updateModifiers()
+                            }
+                            .controlSize(.small)
+                        }
                     }
                 }
                 .padding()

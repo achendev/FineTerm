@@ -620,7 +620,7 @@ func getRealFrontmostApp() -> NSRunningApplication? {
     return workspaceApp
 }
 
-func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, frontAppID: String) -> Bool {
+func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, event: CGEvent, frontAppID: String) -> Bool {
     let isFlagsChanged = (type == .flagsChanged)
     let rawKeyCode = CGKeyCode(keyCode)
     
@@ -823,7 +823,12 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                     return true
                 } else {
                     activeRemaps[rawKeyCode] = action.keyCode
-                    KeyboardInterceptor.postMouseEvent(button: btn, isDown: true)
+                    
+                    // Filter keyboard autorepeats for mouse buttons
+                    let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                    if !isRepeat {
+                        KeyboardInterceptor.postMouseEvent(button: btn, isDown: true)
+                    }
                     return true
                 }
             } else if action.keyCode >= 1000 {
@@ -937,8 +942,16 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
                 let btnStr = capsTarget.replacingOccurrences(of: "button", with: "")
                 let btn = Int32(btnStr) ?? 1
                 
-                if type == .keyDown || type == .keyUp {
-                    KeyboardInterceptor.postMouseEvent(button: btn, isDown: type == .keyDown)
+                // Keyboard repeats generate spammy MouseDown events, filtering them ensures proper dragging behavior
+                let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                
+                if type == .keyDown {
+                    if !isRepeat {
+                        KeyboardInterceptor.postMouseEvent(button: btn, isDown: true)
+                    }
+                    return nil // Swallow event
+                } else if type == .keyUp {
+                    KeyboardInterceptor.postMouseEvent(button: btn, isDown: false)
                     return nil // Swallow event
                 }
             }
@@ -975,7 +988,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     // Execute PC Mode Mapping (First Priority)
     if isKeyDownOrUp {
         let frontAppID = frontApp?.bundleIdentifier ?? ""
-        let wasSwallowed = processPCModeRules(type: effectiveType, keyCode: effectiveKeyCode, flags: flags, frontAppID: frontAppID)
+        let wasSwallowed = processPCModeRules(type: effectiveType, keyCode: effectiveKeyCode, flags: flags, event: event, frontAppID: frontAppID)
         if wasSwallowed {
             return nil
         }

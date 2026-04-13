@@ -813,7 +813,7 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                     case 59, 62: isPress = originalFlags.contains(.maskControl)
                     case 58, 61: isPress = originalFlags.contains(.maskAlternate)
                     case 55, 54: isPress = originalFlags.contains(.maskCommand)
-                    case 57: isPress = true // CapsLock
+                    case 57: isPress = true // CapsLock toggle triggers full press
                     default: break
                     }
                     if isPress {
@@ -827,7 +827,7 @@ func processPCModeRules(type: CGEventType, keyCode: Int64, flags: CGEventFlags, 
                     return true
                 }
             } else if action.keyCode >= 1000 {
-                // Map to a Media Key
+                // Map to a Media Key (Volume/Brightness)
                 let mediaKey = Int32(action.keyCode - 1000)
                 if isFlagsChanged {
                     var isPress = false
@@ -920,6 +920,29 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     // Safety Net: Prevent infinite loops from our own synthesized CGEvents
     if event.getIntegerValueField(.eventSourceUserData) == magicEventSourceUserData {
         return Unmanaged.passUnretained(event)
+    }
+    
+    // --- SPECIAL CAPS LOCK -> MOUSE BUTTON HYBRID HOOK ---
+    // If hidutil mapped Caps Lock to F20-F18 to simulate mouse clicks, catch it here.
+    if UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) {
+        let capsTarget = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapCapsLock) ?? "capslock"
+        if capsTarget.hasPrefix("button") {
+            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            
+            // F20 = 90, F19 = 80, F18 = 79
+            if (capsTarget == "button1" && keyCode == 90) ||
+               (capsTarget == "button2" && keyCode == 80) ||
+               (capsTarget == "button3" && keyCode == 79) {
+                
+                let btnStr = capsTarget.replacingOccurrences(of: "button", with: "")
+                let btn = Int32(btnStr) ?? 1
+                
+                if type == .keyDown || type == .keyUp {
+                    KeyboardInterceptor.postMouseEvent(button: btn, isDown: type == .keyDown)
+                    return nil // Swallow event
+                }
+            }
+        }
     }
     
     // Evaluate possible System Defined Events (Media Keys translated to F-keys)

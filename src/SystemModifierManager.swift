@@ -2,6 +2,7 @@ import Foundation
 
 struct SystemModifierManager {
     // HID Usage Tables (Apple standard):
+    // Caps Lock:    0x700000039
     // Left Control: 0x7000000E0
     // Left Option:  0x7000000E2
     // Left Command: 0x7000000E3
@@ -17,10 +18,11 @@ struct SystemModifierManager {
             return
         }
         
-        let fnTarget = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapFn) ?? "globe"
-        let ctrlTarget = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapCtrl) ?? "control"
-        let optTarget = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapOpt) ?? "option"
-        let cmdTarget = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapCmd) ?? "command"
+        let fnTarget = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapFn) ?? "control"
+        let ctrlTarget = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapCtrl) ?? "globe"
+        let optTarget = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapOpt) ?? "command"
+        let cmdTarget = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapCmd) ?? "option"
+        let capsLockTarget = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapCapsLock) ?? "capslock"
         
         var mappings: [String] = []
         
@@ -30,6 +32,11 @@ struct SystemModifierManager {
             case "control": return isRight ? 0x7000000E4 : 0x7000000E0
             case "option": return isRight ? 0x7000000E6 : 0x7000000E2
             case "command": return isRight ? 0x7000000E7 : 0x7000000E3
+            case "capslock": return 0x700000039
+            // Mouse button mapping hack: Map to unused F-keys F20, F19, F18 which are intercepted locally
+            case "button1": return 0x70000006F // F20
+            case "button2": return 0x70000006E // F19
+            case "button3": return 0x70000006D // F18
             default: return 0
             }
         }
@@ -65,6 +72,12 @@ struct SystemModifierManager {
             
             let rDst = getDst(for: cmdTarget, isRight: true)
             mappings.append("{\"HIDKeyboardModifierMappingSrc\":0x7000000E7,\"HIDKeyboardModifierMappingDst\":\(rDst)}")
+        }
+        
+        // 5. Map Caps Lock
+        if capsLockTarget != "capslock" {
+            let dst = getDst(for: capsLockTarget, isRight: false)
+            mappings.append("{\"HIDKeyboardModifierMappingSrc\":0x700000039,\"HIDKeyboardModifierMappingDst\":\(dst)}")
         }
         
         let json = "{\"UserKeyMapping\": [\(mappings.joined(separator: ","))]}"

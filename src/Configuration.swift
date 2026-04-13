@@ -51,6 +51,7 @@ struct AppConfig {
         static let systemModifierMapCtrl = "systemModifierMapCtrl"
         static let systemModifierMapOpt = "systemModifierMapOpt"
         static let systemModifierMapCmd = "systemModifierMapCmd"
+        static let systemModifierMapCapsLock = "systemModifierMapCapsLock"
         
         static let pcModeRules = "pcModeRules"
         
@@ -206,10 +207,11 @@ struct AppConfig {
         Keys.skipNonRunningApps: false,
         
         Keys.systemModifierSwapEnabled: false,
-        Keys.systemModifierMapFn: "globe",
-        Keys.systemModifierMapCtrl: "control",
-        Keys.systemModifierMapOpt: "option",
-        Keys.systemModifierMapCmd: "command",
+        Keys.systemModifierMapFn: "control",
+        Keys.systemModifierMapCtrl: "globe",
+        Keys.systemModifierMapOpt: "command",
+        Keys.systemModifierMapCmd: "option",
+        Keys.systemModifierMapCapsLock: "capslock",
         
         Keys.pcModeRules: pcModeRulesData,
         

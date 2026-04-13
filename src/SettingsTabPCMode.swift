@@ -111,6 +111,7 @@ struct PCModeRuleRowView: View {
 
 struct ModifiersPickerView: View {
     @Binding var selection: String
+    var includeMouse: Bool = false
     
     var body: some View {
         Picker("", selection: $selection) {
@@ -118,9 +119,17 @@ struct ModifiersPickerView: View {
             Text("Control").tag("control")
             Text("Option").tag("option")
             Text("Command").tag("command")
+            Text("Caps Lock").tag("capslock")
+            
+            if includeMouse {
+                Divider()
+                Text("Left Click").tag("button1")
+                Text("Right Click").tag("button2")
+                Text("Middle Click").tag("button3")
+            }
         }
         .labelsHidden()
-        .frame(maxWidth: 140, alignment: .trailing)
+        .frame(maxWidth: 160, alignment: .trailing)
     }
 }
 
@@ -128,10 +137,11 @@ struct PCModeSettingsTab: View {
     @AppStorage(AppConfig.Keys.pcModeRules) private var pcModeRulesData: Data = AppConfig.pcModeRulesData
     
     @AppStorage(AppConfig.Keys.systemModifierSwapEnabled) private var systemModifierSwapEnabled = false
-    @AppStorage(AppConfig.Keys.systemModifierMapFn) private var mapFn = "globe"
-    @AppStorage(AppConfig.Keys.systemModifierMapCtrl) private var mapCtrl = "control"
-    @AppStorage(AppConfig.Keys.systemModifierMapOpt) private var mapOpt = "option"
-    @AppStorage(AppConfig.Keys.systemModifierMapCmd) private var mapCmd = "command"
+    @AppStorage(AppConfig.Keys.systemModifierMapFn) private var mapFn = "control"
+    @AppStorage(AppConfig.Keys.systemModifierMapCtrl) private var mapCtrl = "globe"
+    @AppStorage(AppConfig.Keys.systemModifierMapOpt) private var mapOpt = "command"
+    @AppStorage(AppConfig.Keys.systemModifierMapCmd) private var mapCmd = "option"
+    @AppStorage(AppConfig.Keys.systemModifierMapCapsLock) private var mapCapsLock = "capslock"
     
     @State private var rules: [PCModeRule] = []
     @StateObject private var appListService = AppListService.shared
@@ -158,9 +168,9 @@ struct PCModeSettingsTab: View {
                         
                         VStack(spacing: 8) {
                             HStack {
-                                Text("Globe (🌐) key")
+                                Text("Caps Lock (⇪) key")
                                 Spacer()
-                                ModifiersPickerView(selection: $mapFn).onChange(of: mapFn) { _ in updateModifiers() }
+                                ModifiersPickerView(selection: $mapCapsLock, includeMouse: true).onChange(of: mapCapsLock) { _ in updateModifiers() }
                             }
                             HStack {
                                 Text("Control (⌃) key")
@@ -176,6 +186,11 @@ struct PCModeSettingsTab: View {
                                 Text("Command (⌘) key")
                                 Spacer()
                                 ModifiersPickerView(selection: $mapCmd).onChange(of: mapCmd) { _ in updateModifiers() }
+                            }
+                            HStack {
+                                Text("Globe (🌐) key")
+                                Spacer()
+                                ModifiersPickerView(selection: $mapFn).onChange(of: mapFn) { _ in updateModifiers() }
                             }
                         }
                         .padding(.vertical, 4)

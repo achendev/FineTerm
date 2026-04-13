@@ -36,7 +36,7 @@ extension ConnectionListView {
             let targetKeyChar = defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n"
             let targetModifierStr = defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command"
             
-            if let targetCode = KeyboardInterceptor.getKeyCode(for: targetKeyChar),
+            if let targetCode = KeyboardParser.getKeyCode(for: targetKeyChar),
                event.keyCode == targetCode {
                 
                 let flags = event.modifierFlags
@@ -92,7 +92,7 @@ extension ConnectionListView {
                     DispatchQueue.main.async {
                         let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
                         if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == target }) {
-                            terminalApp.activate(options:[.activateIgnoringOtherApps])
+                            terminalApp.activate(options: [.activateIgnoringOtherApps])
                         }
                     }
                 } else {

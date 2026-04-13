@@ -307,7 +307,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let targetKeyChar = defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n"
             let targetModifierStr = defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command"
             
-            if let targetCode = KeyboardInterceptor.getKeyCode(for: targetKeyChar),
+            if let targetCode = KeyboardParser.getKeyCode(for: targetKeyChar),
                event.keyCode == targetCode {
                 let flags = event.modifierFlags
                 var modifierMatch = false

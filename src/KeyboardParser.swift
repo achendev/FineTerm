@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 struct KeyboardParser {
     // Maps NX_KEYTYPE media keys to standard F-key keycodes
@@ -53,7 +54,11 @@ struct KeyboardParser {
     ]
 
     static func getKeyCode(for char: String) -> CGKeyCode? {
-        let lower = char.lowercased().trimmingCharacters(in: .whitespaces)
+        let lower = char.lowercased()
+                        .components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet.punctuationCharacters).inverted)
+                        .joined()
+                        .trimmingCharacters(in: .whitespaces)
+                        
         if let code = specialKeyCodes[lower] { return code }
         
         switch lower {
@@ -77,7 +82,9 @@ struct KeyboardParser {
         }
         
         let rawParts = input.components(separatedBy: "+")
-        let parts = rawParts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty }
+        let parts = rawParts.map { 
+            $0.components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet.punctuationCharacters).inverted).joined().lowercased() 
+        }.filter { !$0.isEmpty }
         
         guard !parts.isEmpty else { return ([], [], "") }
         
@@ -86,12 +93,14 @@ struct KeyboardParser {
         let key = parts.last!
         
         if parts.count > 1 {
-            for mod in parts.dropLast() {
+            for rawMod in parts.dropLast() {
+                let mod = rawMod.replacingOccurrences(of: " ", with: "_")
                 switch mod {
                 case "cmd", "command": coreFlags.insert(.maskCommand)
                 case "ctrl", "control": coreFlags.insert(.maskControl)
                 case "opt", "alt", "option": coreFlags.insert(.maskAlternate)
                 case "shift": coreFlags.insert(.maskShift)
+                case "fn", "globe": coreFlags.insert(.maskSecondaryFn)
                 
                 case "lcmd", "left_command": coreFlags.insert(.maskCommand); strictFlags.append("left_command")
                 case "rcmd", "right_command": coreFlags.insert(.maskCommand); strictFlags.append("right_command")
@@ -101,10 +110,15 @@ struct KeyboardParser {
                 case "ropt", "right_option", "ralt": coreFlags.insert(.maskAlternate); strictFlags.append("right_option")
                 case "lshift", "left_shift": coreFlags.insert(.maskShift); strictFlags.append("left_shift")
                 case "rshift", "right_shift": coreFlags.insert(.maskShift); strictFlags.append("right_shift")
-                default: break
+                default: 
+                    if UserDefaults.standard.bool(forKey: "debugMode") {
+                        print("DEBUG: [KeyboardParser] FAILED to parse modifier '\(mod)' in rule '\(input)'")
+                    }
+                    return ([], [], "") 
                 }
             }
         }
+        
         return (coreFlags, strictFlags, key)
     }
 }

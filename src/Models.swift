@@ -133,6 +133,10 @@ struct PCModeRule: Identifiable, Codable, Equatable {
     var appFilterMode: AppFilterMode = .none
     var appBundleIDs: [String] = []
     
+    enum CodingKeys: String, CodingKey {
+        case id, name, isEnabled, mappings, appFilterMode, appBundleIDs
+    }
+    
     init(id: UUID = UUID(), name: String, isEnabled: Bool = false, mappings: [KeyMap] = [], appFilterMode: AppFilterMode = .none, appBundleIDs: [String] = []) {
         self.id = id
         self.name = name
@@ -140,6 +144,17 @@ struct PCModeRule: Identifiable, Codable, Equatable {
         self.mappings = mappings
         self.appFilterMode = appFilterMode
         self.appBundleIDs = appBundleIDs
+    }
+    
+    // Custom decoder guarantees that missing fields from older app versions won't cause the entire ruleset to crash and silently drop.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Unnamed Rule"
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+        mappings = try container.decodeIfPresent([KeyMap].self, forKey: .mappings) ?? []
+        appFilterMode = try container.decodeIfPresent(AppFilterMode.self, forKey: .appFilterMode) ?? .none
+        appBundleIDs = try container.decodeIfPresent([String].self, forKey: .appBundleIDs) ?? []
     }
 }
 
@@ -212,7 +227,7 @@ struct GroupAlertItem: Identifiable {
 }
 
 struct ConnectionsDocument: FileDocument {
-    static var readableContentTypes: [UTType] {[.json] }
+    static var readableContentTypes: [UTType] { [.json] }
 
     var exportData: ExportData
 

@@ -1,5 +1,6 @@
 import Cocoa
 import ApplicationServices
+import Foundation
 
 class PCModeProcessor {
     static let shared = PCModeProcessor()
@@ -12,8 +13,14 @@ class PCModeProcessor {
     }
     
     func process(type: CGEventType, keyCode: Int64, flags: CGEventFlags, event: CGEvent, frontAppID: String) -> Bool {
+        let isDebug = UserDefaults.standard.bool(forKey: "debugMode")
         let isFlagsChanged = (type == .flagsChanged)
         let rawKeyCode = CGKeyCode(keyCode)
+        
+        if isDebug && (type == .keyDown || type == .flagsChanged) {
+            print("DEBUG: [PCMode] --- EVENT INCOMING ---")
+            print("DEBUG: [PCMode] Type: \(type == .keyDown ? "KeyDown" : "FlagsChanged"), KeyCode: \(rawKeyCode), Flags: \(flags.rawValue)")
+        }
         
         // 1. Un-stick Logic for KeyUp OR Modifier Release
         var isRelease = false
@@ -76,6 +83,11 @@ class PCModeProcessor {
             if parsedRule.rule.appFilterMode == .exclude && parsedRule.rule.appBundleIDs.contains(frontAppID) { continue }
             
             for map in parsedRule.mappings {
+                
+                if isDebug && type == .keyDown && map.fromKeyCode == rawKeyCode {
+                    print("DEBUG: [PCMode] Evaluating Candidate: '\(map.original.from)'")
+                }
+                
                 if map.fromKeyCode != rawKeyCode { continue }
                 
                 var cleanEventFlags = originalFlags
@@ -90,7 +102,17 @@ class PCModeProcessor {
                 }
                 
                 let coreEventFlags = cleanEventFlags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
-                if !coreEventFlags.isSuperset(of: map.fromCoreFlags) { continue }
+                
+                if isDebug && type == .keyDown {
+                    print("DEBUG: [PCMode]   Event Core Flags: \(coreEventFlags.rawValue)")
+                    print("DEBUG: [PCMode]   Rule Core Flags:  \(map.fromCoreFlags.rawValue)")
+                }
+                
+                // Allow modifier inheritance (e.g. dragging shift over a ctrl mapping)
+                if !coreEventFlags.isSuperset(of: map.fromCoreFlags) {
+                    if isDebug && type == .keyDown { print("DEBUG: [PCMode]   -> FAILED: Event flags are not a superset of rule flags.") }
+                    continue
+                }
                 
                 var strictMatch = true
                 let raw = cleanEventFlags.rawValue
@@ -107,9 +129,15 @@ class PCModeProcessor {
                     default: break
                     }
                 }
-                if !strictMatch { continue }
+                if !strictMatch {
+                    if isDebug && type == .keyDown { print("DEBUG: [PCMode]   -> FAILED: Strict flag mismatch.") }
+                    continue
+                }
                 
                 // Match found!
+                if isDebug && type == .keyDown {
+                    print("DEBUG: [PCMode]   -> MATCHED! Executing mapping to: '\(map.original.to)'")
+                }
                 
                 if map.isShell {
                     var shouldExecute = false
@@ -317,6 +345,11 @@ class PCModeProcessor {
                         if let newEvent = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: true) {
                             newEvent.flags = finalFlags
                             newEvent.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                            
+                            if isDebug {
+                                print("DEBUG: [PCMode]   -> Injecting KeyCode: \(action.keyCode), Flags: \(finalFlags.rawValue)")
+                            }
+                            
                             newEvent.post(tap: .cghidEventTap)
                         }
                         return true

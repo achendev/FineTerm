@@ -31,6 +31,9 @@ class KeyboardCache {
     }
     
     private func refresh() {
+        let isDebug = UserDefaults.standard.bool(forKey: "debugMode")
+        if isDebug { print("DEBUG: [KeyboardCache] Refreshing internal rule cache...") }
+        
         if let data = UserDefaults.standard.data(forKey: AppConfig.Keys.customAppShortcuts),
            let shortcuts = try? JSONDecoder().decode([CustomAppShortcut].self, from: data) {
             self.customShortcuts = shortcuts
@@ -39,52 +42,69 @@ class KeyboardCache {
         }
         
         var newPCRules: [ParsedPCModeRule] = []
-        if let data = UserDefaults.standard.data(forKey: AppConfig.Keys.pcModeRules),
-           let rules = try? JSONDecoder().decode([PCModeRule].self, from: data) {
-            
-            for rule in rules where rule.isEnabled {
-                var parsedMappings: [ParsedKeyMap] = []
-                for map in rule.mappings {
-                    let fromParsed = KeyboardParser.parseKeyString(map.from)
-                    guard !fromParsed.key.isEmpty else { continue }
-                    guard let fromCode = KeyboardParser.getKeyCode(for: fromParsed.key) else { continue }
-                    
-                    var isShell = false
-                    var shellCommand: String? = nil
-                    var toActions: [ParsedToAction] = []
-                    
-                    if map.to.lowercased().hasPrefix("shell:") {
-                        isShell = true
-                        let cmdStartIndex = map.to.index(map.to.startIndex, offsetBy: 6)
-                        shellCommand = String(map.to[cmdStartIndex...]).trimmingCharacters(in: .whitespaces)
-                    } else {
-                        let parts = map.to.components(separatedBy: ",")
-                        for part in parts {
-                            let toParsed = KeyboardParser.parseKeyString(part)
-                            guard !toParsed.key.isEmpty else { continue }
-                            guard let code = KeyboardParser.getKeyCode(for: toParsed.key) else { continue }
-                            toActions.append(ParsedToAction(keyCode: code, coreFlags: toParsed.coreFlags))
+        if let data = UserDefaults.standard.data(forKey: AppConfig.Keys.pcModeRules) {
+            do {
+                let rules = try JSONDecoder().decode([PCModeRule].self, from: data)
+                
+                for rule in rules where rule.isEnabled {
+                    var parsedMappings: [ParsedKeyMap] = []
+                    for map in rule.mappings {
+                        let fromParsed = KeyboardParser.parseKeyString(map.from)
+                        guard !fromParsed.key.isEmpty else { 
+                            if isDebug { print("DEBUG: [KeyboardCache] ERROR: Skipping '\(map.from)' -> fromKey is empty") }
+                            continue 
                         }
-                        if toActions.isEmpty { continue }
+                        guard let fromCode = KeyboardParser.getKeyCode(for: fromParsed.key) else { 
+                            if isDebug { print("DEBUG: [KeyboardCache] ERROR: Skipping '\(map.from)' -> Unknown KeyCode for '\(fromParsed.key)'") }
+                            continue 
+                        }
+                        
+                        var isShell = false
+                        var shellCommand: String? = nil
+                        var toActions: [ParsedToAction] = []
+                        
+                        if map.to.lowercased().hasPrefix("shell:") {
+                            isShell = true
+                            let cmdStartIndex = map.to.index(map.to.startIndex, offsetBy: 6)
+                            shellCommand = String(map.to[cmdStartIndex...]).trimmingCharacters(in: .whitespaces)
+                        } else {
+                            let parts = map.to.components(separatedBy: ",")
+                            for part in parts {
+                                let toParsed = KeyboardParser.parseKeyString(part)
+                                guard !toParsed.key.isEmpty else { continue }
+                                guard let code = KeyboardParser.getKeyCode(for: toParsed.key) else { continue }
+                                toActions.append(ParsedToAction(keyCode: code, coreFlags: toParsed.coreFlags))
+                            }
+                            if toActions.isEmpty { 
+                                if isDebug { print("DEBUG: [KeyboardCache] ERROR: Skipping '\(map.from)' -> Unable to parse 'to' field: '\(map.to)'") }
+                                continue 
+                            }
+                        }
+                        
+                        if isDebug {
+                            print("DEBUG: [KeyboardCache] Loaded successfully: '\(map.from)' (Code: \(fromCode), Flags: \(fromParsed.coreFlags.rawValue))")
+                        }
+                        
+                        parsedMappings.append(ParsedKeyMap(
+                            original: map, 
+                            fromKeyCode: fromCode, 
+                            fromCoreFlags: fromParsed.coreFlags, 
+                            fromStrictFlags: fromParsed.strictFlags, 
+                            isShell: isShell,
+                            shellCommand: shellCommand,
+                            toActions: toActions
+                        ))
                     }
                     
-                    parsedMappings.append(ParsedKeyMap(
-                        original: map, 
-                        fromKeyCode: fromCode, 
-                        fromCoreFlags: fromParsed.coreFlags, 
-                        fromStrictFlags: fromParsed.strictFlags, 
-                        isShell: isShell,
-                        shellCommand: shellCommand,
-                        toActions: toActions
-                    ))
+                    parsedMappings.sort { $0.fromCoreFlags.rawValue.nonzeroBitCount > $1.fromCoreFlags.rawValue.nonzeroBitCount }
+                    newPCRules.append(ParsedPCModeRule(rule: rule, mappings: parsedMappings))
                 }
-                
-                // Sort by most specific modifiers first (e.g. Ctrl+Shift matches before Ctrl)
-                parsedMappings.sort { $0.fromCoreFlags.rawValue.nonzeroBitCount > $1.fromCoreFlags.rawValue.nonzeroBitCount }
-                newPCRules.append(ParsedPCModeRule(rule: rule, mappings: parsedMappings))
+            } catch {
+                if isDebug { print("DEBUG: [KeyboardCache] CRITICAL ERROR decoding PCModeRules JSON: \(error)") }
             }
         }
         self.pcRules = newPCRules
+        if isDebug { print("DEBUG: [KeyboardCache] Finished refreshing. Total Active PC Rule Groups loaded: \(self.pcRules.count)") }
         
         self.nextGroupTriggers = loadTriggers(forKey: AppConfig.Keys.nextGroupTriggers, oldMod1: AppConfig.Keys.nextGroupModifier, oldMod2: AppConfig.Keys.nextGroupModifier2, oldKey: AppConfig.Keys.nextGroupKey, defaultKey: ".")
         self.prevGroupTriggers = loadTriggers(forKey: AppConfig.Keys.prevGroupTriggers, oldMod1: AppConfig.Keys.prevGroupModifier, oldMod2: AppConfig.Keys.prevGroupModifier2, oldKey: AppConfig.Keys.prevGroupKey, defaultKey: ",")

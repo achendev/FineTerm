@@ -210,7 +210,7 @@ class MouseInterceptor {
                         (1 << CGEventType.otherMouseUp.rawValue)
         
         guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
+            tap: .cghidEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: CGEventMask(eventMask),

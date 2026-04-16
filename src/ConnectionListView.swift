@@ -33,8 +33,14 @@ struct ConnectionListView: View {
     // Interaction State
     @State var highlightedConnectionID: UUID? = nil
     @State var selectedConnectionID: UUID? = nil
+    @State var selectedGroupID: UUID? = nil
     @State var lastClickTime: Date = Date.distantPast
     @State var lastClickedID: UUID? = nil
+    
+    // Group Editor State
+    @State var editGroupName = ""
+    @State var editGroupParsingEnabled = false
+    @State var editGroupParsingScript = ""
     
     @AppStorage(AppConfig.Keys.hideCommandInList) var hideCommandInList = true
     @AppStorage(AppConfig.Keys.smartFilter) var smartFilter = true
@@ -53,7 +59,7 @@ struct ConnectionListView: View {
                 newGroupName: $newGroupName,
                 isSearchFocused: $isSearchFocused
             )
-            .onTapGesture { if selectedConnectionID != nil { resetForm() } }
+            .onTapGesture { if selectedConnectionID != nil || selectedGroupID != nil { resetForm() } }
             .onChange(of: searchText) { text in
                 if !text.isEmpty {
                     let filtered = performFilter(text)
@@ -73,22 +79,32 @@ struct ConnectionListView: View {
             
             Divider()
             
-            ConnectionEditorView(
-                selectedID: $selectedConnectionID,
-                name: $newName,
-                command: $newCommand,
-                groupID: $newGroupID,
-                usePrefix: $newUsePrefix,
-                useSuffix: $newUseSuffix,
-                setTabName: $newSetTabName,
-                groups: store.groups,
-                onSave: saveSelected,
-                onDelete: deleteSelected,
-                onAdd: addNew,
-                onCancel: resetForm
-            )
+            if let groupID = selectedGroupID {
+                GroupEditorView(
+                    groupID: groupID,
+                    name: $editGroupName,
+                    parsingEnabled: $editGroupParsingEnabled,
+                    parsingScript: $editGroupParsingScript,
+                    onSave: saveSelectedGroup,
+                    onCancel: resetForm
+                )
+            } else {
+                ConnectionEditorView(
+                    selectedID: $selectedConnectionID,
+                    name: $newName,
+                    command: $newCommand,
+                    groupID: $newGroupID,
+                    usePrefix: $newUsePrefix,
+                    useSuffix: $newUseSuffix,
+                    setTabName: $newSetTabName,
+                    groups: store.groups,
+                    onSave: saveSelected,
+                    onDelete: deleteSelected,
+                    onAdd: addNew,
+                    onCancel: resetForm
+                )
+            }
         }
-        // Removed .sheet(isPresented: $showSettings)
         .alert(item: $groupToDelete) { item in
             Alert(
                 title: Text("Delete Group?"),
@@ -102,7 +118,6 @@ struct ConnectionListView: View {
         }
         .fileExporter(isPresented: $isExporting, document: documentToExport, contentType: .json, defaultFilename: "mt_connections_backup") { _ in }
         .onAppear(perform: setupOnAppear)
-        // Removed NotificationCenter observer for Settings
     }
     
     // MARK: - List Rendering
@@ -120,7 +135,7 @@ struct ConnectionListView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Color(NSColor.controlBackgroundColor))
-            .onTapGesture { if selectedConnectionID != nil { resetForm() } }
+            .onTapGesture { if selectedConnectionID != nil || selectedGroupID != nil { resetForm() } }
             .onChange(of: highlightedConnectionID) { id in
                 if let id = id { withAnimation { proxy.scrollTo(id, anchor: .center) } }
             }
@@ -144,6 +159,7 @@ struct ConnectionListView: View {
                 connections: getSortedConnections(groupID: group.id), 
                 highlightedID: highlightedConnectionID,
                 selectedID: selectedConnectionID,
+                selectedGroupID: selectedGroupID,
                 hideCommand: hideCommandInList,
                 searchText: searchText,
                 onToggleExpand: { store.toggleGroupExpansion($0) },
@@ -156,7 +172,9 @@ struct ConnectionListView: View {
                 },
                 onMoveConnection: { store.moveConnection($0, toGroup: $1) },
                 onRowTap: handleRowTap,
-                onRowConnect: launchConnection
+                onRowConnect: launchConnection,
+                onSelectGroup: handleGroupTap,
+                onRunScript: { store.runParsingScript(for: $0) }
             )
         }
     }

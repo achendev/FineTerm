@@ -57,7 +57,7 @@ extension ConnectionListView {
                     // Check if second activation should switch to Terminal
                     let secondActivationToTerminal = defaults.bool(forKey: AppConfig.Keys.secondActivationToTerminal)
                     
-                    if secondActivationToTerminal && self.isSearchFocused && self.selectedConnectionID == nil {
+                    if secondActivationToTerminal && self.isSearchFocused && self.selectedConnectionID == nil && self.selectedGroupID == nil {
                         DispatchQueue.main.async {
                             let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
                             if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == target }) {
@@ -74,7 +74,6 @@ extension ConnectionListView {
                     // Reset and focus search
                     NSApp.keyWindow?.makeFirstResponder(nil)
                     DispatchQueue.main.async {
-                        self.selectedConnectionID = nil
                         self.resetForm()
                         self.isSearchFocused = false
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -132,6 +131,7 @@ extension ConnectionListView {
                 if let current = highlightedConnectionID,
                    let conn = currentList.first(where: { $0.id == current }) {
                     if self.selectedConnectionID != nil { self.saveSelected() }
+                    if self.selectedGroupID != nil { self.saveSelectedGroup() }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         self.launchConnection(conn)
                     }

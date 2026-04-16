@@ -58,6 +58,7 @@ extension ConnectionListView {
             launchConnection(conn)
         } else {
             selectedConnectionID = conn.id
+            selectedGroupID = nil
             newName = conn.name
             newCommand = conn.command
             newGroupID = conn.groupID
@@ -68,6 +69,20 @@ extension ConnectionListView {
         }
         lastClickTime = now
         lastClickedID = conn.id
+    }
+    
+    func handleGroupTap(_ group: ConnectionGroup) {
+        let now = Date()
+        selectedGroupID = group.id
+        selectedConnectionID = nil
+        highlightedConnectionID = nil
+        
+        editGroupName = group.name
+        editGroupParsingScript = group.parsingScript ?? ""
+        editGroupParsingEnabled = group.parsingScript != nil
+        
+        lastClickTime = now
+        lastClickedID = group.id
     }
     
     func launchConnection(_ conn: Connection) {
@@ -110,6 +125,15 @@ extension ConnectionListView {
         }
     }
     
+    func saveSelectedGroup() {
+        if let id = selectedGroupID {
+            if editGroupName.isEmpty { return }
+            let script = editGroupParsingEnabled ? editGroupParsingScript : nil
+            store.updateGroup(id: id, name: editGroupName, parsingScript: script)
+            resetForm()
+        }
+    }
+    
     func deleteSelected() {
         if let id = selectedConnectionID {
             store.delete(id: id)
@@ -132,6 +156,7 @@ extension ConnectionListView {
         newUseSuffix = true
         newSetTabName = true
         selectedConnectionID = nil
+        selectedGroupID = nil
         lastClickedID = nil
     }
     

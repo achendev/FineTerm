@@ -5,33 +5,46 @@ struct GroupSectionView: View {
     let group: ConnectionGroup
     let connections: [Connection]
     
-    // Dependencies needed for row rendering
     let highlightedID: UUID?
     let selectedID: UUID?
+    let selectedGroupID: UUID?
     let hideCommand: Bool
     let searchText: String
     
-    // Callbacks
     let onToggleExpand: (UUID) -> Void
-    // Updated signature: (GroupID, IsRecursive/ShiftPressed)
     let onDeleteGroup: (UUID, Bool) -> Void
     let onMoveConnection: (UUID, UUID?) -> Void
     let onRowTap: (Connection) -> Void
     let onRowConnect: (Connection) -> Void
+    let onSelectGroup: (ConnectionGroup) -> Void
+    let onRunScript: (UUID) -> Void
     
     var body: some View {
         VStack(spacing: 0) {
             // Group Header
             HStack {
-                Image(systemName: group.isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.caption)
-                    .frame(width: 15)
+                Button(action: { onToggleExpand(group.id) }) {
+                    Image(systemName: group.isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                        .frame(width: 15)
+                }
+                .buttonStyle(.borderless)
                 
                 Text(group.name)
                     .font(.headline)
-                    .foregroundColor(.primary)
+                    .foregroundColor(selectedGroupID == group.id ? .accentColor : .primary)
                 
                 Spacer()
+                
+                if let script = group.parsingScript, !script.isEmpty {
+                    Button(action: { onRunScript(group.id) }) {
+                        Image(systemName: "play.circle")
+                            .font(.system(size: 16))
+                            .foregroundColor(selectedGroupID == group.id ? .accentColor : .secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Run Parsing Script")
+                }
                 
                 Button(action: { 
                     // Detect Shift key for recursive delete
@@ -47,10 +60,10 @@ struct GroupSectionView: View {
             }
             .padding(.vertical, 6)
             .padding(.horizontal, 10)
-            .background(Color.gray.opacity(0.1))
+            .background(selectedGroupID == group.id ? Color.accentColor.opacity(0.1) : Color.gray.opacity(0.1))
             .contentShape(Rectangle())
             .onTapGesture {
-                onToggleExpand(group.id)
+                onSelectGroup(group)
             }
             // DROP TARGET: Add Connection to Group
             .onDrop(of: [UTType.text, UTType.plainText], isTargeted: nil) { providers in

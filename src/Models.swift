@@ -162,6 +162,7 @@ struct ConnectionGroup: Identifiable, Codable {
     var id = UUID()
     var name: String
     var isExpanded: Bool = true
+    var parsingScript: String? = nil
 }
 
 struct Connection: Identifiable, Codable {
@@ -173,8 +174,9 @@ struct Connection: Identifiable, Codable {
     var useSuffix: Bool
     var setTabName: Bool
     var lastUsed: Date?
+    var isParsed: Bool? = false
     
-    init(groupID: UUID? = nil, name: String, command: String, usePrefix: Bool = true, useSuffix: Bool = true, setTabName: Bool = true, lastUsed: Date? = nil) {
+    init(groupID: UUID? = nil, name: String, command: String, usePrefix: Bool = true, useSuffix: Bool = true, setTabName: Bool = true, lastUsed: Date? = nil, isParsed: Bool? = false) {
         self.id = UUID()
         self.groupID = groupID
         self.name = name
@@ -183,6 +185,7 @@ struct Connection: Identifiable, Codable {
         self.useSuffix = useSuffix
         self.setTabName = setTabName
         self.lastUsed = lastUsed
+        self.isParsed = isParsed
     }
 }
 
@@ -206,6 +209,7 @@ struct StoreData: Codable {
 
 struct ExportGroup: Codable {
     var name: String
+    var parsingScript: String?
 }
 
 struct ExportConnection: Codable {
@@ -215,6 +219,7 @@ struct ExportConnection: Codable {
     var usePrefix: Bool?
     var useSuffix: Bool?
     var setTabName: Bool?
+    var isParsed: Bool?
 }
 
 struct ExportData: Codable {
@@ -227,7 +232,7 @@ struct GroupAlertItem: Identifiable {
 }
 
 struct ConnectionsDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.json] }
+    static var readableContentTypes: [UTType] {[.json] }
 
     var exportData: ExportData
 

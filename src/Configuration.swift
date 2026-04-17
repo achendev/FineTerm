@@ -137,9 +137,6 @@ struct AppConfig {
         PCModeRule(name: "Switch Apps (Alt+Tab)", isEnabled: false, mappings: [
             KeyMap(from: "opt + tab", to: "ctrl + f4")
         ]),
-        PCModeRule(name: "Spotlight (Opt+Space)", isEnabled: false, mappings: [
-            KeyMap(from: "opt + spacebar", to: "cmd + spacebar")
-        ]),
         PCModeRule(name: "System Controls & Misc", isEnabled: false, mappings: [
             KeyMap(from: "cmd + f11", to: "shift + opt + volume_decrement"),
             KeyMap(from: "cmd + f12", to: "shift + opt + volume_increment"),

@@ -23,11 +23,27 @@ struct GroupEditorView: View {
             
             Toggle("Parsing script", isOn: $parsingEnabled)
                 .font(.caption)
+                .onChange(of: parsingEnabled) { enabled in
+                    if enabled && parsingScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        parsingScript = """
+                        echo '[
+                          {
+                            "name": "example1.srv",
+                            "command": "ssh root@1.2.3.4 #or any other string command"
+                          },
+                          {
+                            "name": "example2.srv",
+                            "command": "ssh root@2.3.4.5 #or any other string command"
+                          }
+                        ]'
+                        """
+                    }
+                }
             
             if parsingEnabled {
                 TextEditor(text: $parsingScript)
                     .font(.system(.caption, design: .monospaced))
-                    .frame(height: 80)
+                    .frame(height: 140)
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.gray.opacity(0.2), lineWidth: 1))
             }
             

@@ -12,6 +12,8 @@ struct ParsedKeyMap {
     let fromStrictFlags: [String]
     let isShell: Bool
     let shellCommand: String?
+    let isFunc: Bool
+    let funcCommand: String?
     let toActions: [ParsedToAction]
 }
 

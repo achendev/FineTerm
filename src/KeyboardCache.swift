@@ -61,12 +61,18 @@ class KeyboardCache {
                         
                         var isShell = false
                         var shellCommand: String? = nil
+                        var isFunc = false
+                        var funcCommand: String? = nil
                         var toActions: [ParsedToAction] = []
                         
                         if map.to.lowercased().hasPrefix("shell:") {
                             isShell = true
                             let cmdStartIndex = map.to.index(map.to.startIndex, offsetBy: 6)
                             shellCommand = String(map.to[cmdStartIndex...]).trimmingCharacters(in: .whitespaces)
+                        } else if map.to.lowercased().hasPrefix("func:") {
+                            isFunc = true
+                            let cmdStartIndex = map.to.index(map.to.startIndex, offsetBy: 5)
+                            funcCommand = String(map.to[cmdStartIndex...]).trimmingCharacters(in: .whitespaces)
                         } else {
                             let parts = map.to.components(separatedBy: ",")
                             for part in parts {
@@ -92,6 +98,8 @@ class KeyboardCache {
                             fromStrictFlags: fromParsed.strictFlags, 
                             isShell: isShell,
                             shellCommand: shellCommand,
+                            isFunc: isFunc,
+                            funcCommand: funcCommand,
                             toActions: toActions
                         ))
                     }
@@ -119,6 +127,6 @@ class KeyboardCache {
         let m1 = UserDefaults.standard.string(forKey: oldMod1) ?? "right control"
         let m2 = UserDefaults.standard.string(forKey: oldMod2) ?? "shift"
         let k = UserDefaults.standard.string(forKey: oldKey) ?? defaultKey
-        return [ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
+        return[ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
     }
 }

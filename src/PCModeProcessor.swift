@@ -167,6 +167,34 @@ class PCModeProcessor {
                     }
                     return true
                 }
+                
+                if map.isFunc {
+                    var shouldExecute = false
+                    if !isFlagsChanged && type == .keyDown {
+                        shouldExecute = true
+                    } else if isFlagsChanged {
+                        var isPress = false
+                        switch rawKeyCode {
+                        case 56, 60: isPress = originalFlags.contains(.maskShift)
+                        case 59, 62: isPress = originalFlags.contains(.maskControl)
+                        case 58, 61: isPress = originalFlags.contains(.maskAlternate)
+                        case 55, 54: isPress = originalFlags.contains(.maskCommand)
+                        case 57: isPress = true
+                        default: break
+                        }
+                        shouldExecute = isPress
+                    }
+                    
+                    if shouldExecute {
+                        if let cmd = map.funcCommand {
+                            if cmd == "lang_switch" {
+                                LangSwitchService.shared.switchKeyboardLanguage()
+                            }
+                        }
+                        activeRemaps[rawKeyCode] = (keyCode: 0, flags: []) // Track so KeyUp/ModRelease is swallowed smoothly
+                    }
+                    return true
+                }
 
                 if map.toActions.count > 1 {
                     // Macro Sequence Handling

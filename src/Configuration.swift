@@ -94,9 +94,9 @@ struct AppConfig {
             KeyMap(from: "cmd + up_arrow", to: "page_up"),
             KeyMap(from: "cmd + down_arrow", to: "page_down")
         ]),
-        PCModeRule(name: "Language Switch (Opt+Shift to Space)", isEnabled: false, mappings: [
-            KeyMap(from: "opt + left_shift", to: "ctrl + opt + spacebar"),
-            KeyMap(from: "shift + left_option", to: "ctrl + opt + spacebar")
+        PCModeRule(name: "Language Switch (Instant)", isEnabled: false, mappings: [
+            KeyMap(from: "opt + left_shift", to: "func: lang_switch"),
+            KeyMap(from: "shift + left_option", to: "func: lang_switch")
         ]),
         PCModeRule(name: "Delete / Backspace Word", isEnabled: false, mappings: [
             KeyMap(from: "ctrl + delete_or_backspace", to: "opt + delete_or_backspace"),
@@ -258,7 +258,7 @@ struct AppConfig {
     }
 
     static func importSettings(from data: Data) -> Bool {
-        guard let dict = try? JSONSerialization.jsonObject(with: data, options: []) as?[String: Any] else { return false }
+        guard let dict = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else { return false }
         for (key, val) in dict {
             guard defaults.keys.contains(key) else { continue }
             

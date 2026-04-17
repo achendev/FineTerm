@@ -11,6 +11,8 @@ struct GroupSectionView: View {
     let hideCommand: Bool
     let searchText: String
     
+    let isParsing: Bool
+    
     let onToggleExpand: (UUID) -> Void
     let onDeleteGroup: (UUID, Bool) -> Void
     let onMoveConnection: (UUID, UUID?) -> Void
@@ -22,49 +24,73 @@ struct GroupSectionView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Group Header
-            HStack {
-                Button(action: { onToggleExpand(group.id) }) {
+            HStack(spacing: 0) {
+                // Expand/Collapse Clickable Area
+                HStack {
                     Image(systemName: group.isExpanded ? "chevron.down" : "chevron.right")
                         .font(.caption)
                         .frame(width: 15)
                 }
-                .buttonStyle(.borderless)
+                .padding(.leading, 10)
+                .padding(.trailing, 8)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+                .onTapGesture { onToggleExpand(group.id) }
+                .onHover { hovering in
+                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
                 
-                Text(group.name)
-                    .font(.headline)
-                    .foregroundColor(selectedGroupID == group.id ? .accentColor : .primary)
+                // Select Group Area
+                HStack {
+                    Text(group.name)
+                        .font(.headline)
+                        .foregroundColor(selectedGroupID == group.id ? .accentColor : .primary)
+                    Spacer()
+                }
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+                .onTapGesture { onSelectGroup(group) }
                 
-                Spacer()
-                
-                if let script = group.parsingScript, !script.isEmpty {
-                    Button(action: { onRunScript(group.id) }) {
-                        Image(systemName: "play.circle")
-                            .font(.system(size: 16))
-                            .foregroundColor(selectedGroupID == group.id ? .accentColor : .secondary)
+                // Actions Area
+                HStack(spacing: 12) {
+                    if let script = group.parsingScript, !script.isEmpty {
+                        if isParsing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 16, height: 16)
+                        } else {
+                            Button(action: { onRunScript(group.id) }) {
+                                Image(systemName: "play.circle")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(selectedGroupID == group.id ? .accentColor : .secondary)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Run Parsing Script")
+                            .onHover { hovering in
+                                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                            }
+                        }
+                    }
+                    
+                    Button(action: { 
+                        // Detect Shift key for recursive delete
+                        let isShift = NSEvent.modifierFlags.contains(.shift)
+                        onDeleteGroup(group.id, isShift) 
+                    }) {
+                        Image(systemName: "trash")
+                            .font(.caption)
+                            .foregroundColor(.gray)
                     }
                     .buttonStyle(.borderless)
-                    .help("Run Parsing Script")
+                    .help("Delete Group (Hold Shift to delete contents too)")
+                    .onHover { hovering in
+                        if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                    }
                 }
-                
-                Button(action: { 
-                    // Detect Shift key for recursive delete
-                    let isShift = NSEvent.modifierFlags.contains(.shift)
-                    onDeleteGroup(group.id, isShift) 
-                }) {
-                    Image(systemName: "trash")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-                .buttonStyle(.borderless)
-                .help("Delete Group (Hold Shift to delete contents too)")
+                .padding(.trailing, 10)
+                .padding(.vertical, 6)
             }
-            .padding(.vertical, 6)
-            .padding(.horizontal, 10)
             .background(selectedGroupID == group.id ? Color.accentColor.opacity(0.1) : Color.gray.opacity(0.1))
-            .contentShape(Rectangle())
-            .onTapGesture {
-                onSelectGroup(group)
-            }
             // DROP TARGET: Add Connection to Group
             .onDrop(of: [UTType.text, UTType.plainText], isTargeted: nil) { providers in
                 if UserDefaults.standard.bool(forKey: "debugMode") {

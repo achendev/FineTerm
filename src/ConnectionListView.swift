@@ -20,6 +20,8 @@ struct ConnectionListView: View {
     
     // UI State
     @State var groupToDelete: GroupAlertItem? = nil
+    @State var parsingGroupIDs: Set<UUID> = []
+    @State var parsingErrorAlert: ParsingErrorAlert? = nil
     
     // Search & Focus
     @State var searchText = ""
@@ -113,6 +115,13 @@ struct ConnectionListView: View {
                 secondaryButton: .cancel()
             )
         }
+        .alert(item: $parsingErrorAlert) { alertInfo in
+            Alert(
+                title: Text("Parsing Error"),
+                message: Text(alertInfo.message),
+                dismissButton: .default(Text("OK"))
+            )
+        }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.json]) { result in
             handleImport(result)
         }
@@ -162,6 +171,7 @@ struct ConnectionListView: View {
                 selectedGroupID: selectedGroupID,
                 hideCommand: hideCommandInList,
                 searchText: searchText,
+                isParsing: parsingGroupIDs.contains(group.id),
                 onToggleExpand: { store.toggleGroupExpansion($0) },
                 onDeleteGroup: { id, isRecursive in 
                     if isRecursive {
@@ -174,7 +184,15 @@ struct ConnectionListView: View {
                 onRowTap: handleRowTap,
                 onRowConnect: launchConnection,
                 onSelectGroup: handleGroupTap,
-                onRunScript: { store.runParsingScript(for: $0) }
+                onRunScript: { groupID in
+                    self.parsingGroupIDs.insert(groupID)
+                    self.store.runParsingScript(for: groupID) { errorMsg in
+                        self.parsingGroupIDs.remove(groupID)
+                        if let errorMsg = errorMsg {
+                            self.parsingErrorAlert = ParsingErrorAlert(message: errorMsg)
+                        }
+                    }
+                }
             )
         }
     }

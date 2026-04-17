@@ -103,9 +103,12 @@ class ConnectionStore: ObservableObject {
     }
     
     // --- Parsing Logic ---
-    func runParsingScript(for groupID: UUID) {
+    func runParsingScript(for groupID: UUID, completion: @escaping (String?) -> Void) {
         guard let group = groups.first(where: { $0.id == groupID }),
-              let script = group.parsingScript, !script.isEmpty else { return }
+              let script = group.parsingScript, !script.isEmpty else { 
+            completion(nil)
+            return 
+        }
         
         DispatchQueue.global(qos: .userInitiated).async {
             let task = Process()
@@ -113,30 +116,41 @@ class ConnectionStore: ObservableObject {
             task.arguments = ["-c", script]
             
             let pipe = Pipe()
+            let errPipe = Pipe()
             task.standardOutput = pipe
-            task.standardError = Pipe()
+            task.standardError = errPipe
             
             do {
                 try task.run()
                 task.waitUntilExit()
                 
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                
+                let stdoutStr = String(data: data, encoding: .utf8) ?? ""
+                let stderrStr = String(data: errData, encoding: .utf8) ?? ""
                 
                 if task.terminationStatus == 0 {
                     let decoder = JSONDecoder()
                     if let parsedList = try? decoder.decode([ParsedConnection].self, from: data) {
                         DispatchQueue.main.async {
                             self.updateParsedConnections(for: groupID, groupName: group.name, parsed: parsedList)
+                            completion(nil)
                         }
                     } else {
-                        print("Failed to decode JSON from parsing script output.")
+                        DispatchQueue.main.async {
+                            completion("JSON Decoding Failed. Make sure the script outputs a valid JSON array.\n\nOutput:\n\(stdoutStr.prefix(800))")
+                        }
                     }
                 } else {
-                    let errData = (task.standardError as? Pipe)?.fileHandleForReading.readDataToEndOfFile() ?? Data()
-                    print("Script failed with status \(task.terminationStatus). Err: \(String(data: errData, encoding: .utf8) ?? "")")
+                    DispatchQueue.main.async {
+                        completion("Script exited with status \(task.terminationStatus).\n\nError:\n\(stderrStr.prefix(500))\n\nOutput:\n\(stdoutStr.prefix(500))")
+                    }
                 }
             } catch {
-                print("Failed to run script: \(error)")
+                DispatchQueue.main.async {
+                    completion("Failed to execute script: \(error.localizedDescription)")
+                }
             }
         }
     }

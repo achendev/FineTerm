@@ -231,6 +231,11 @@ struct GroupAlertItem: Identifiable {
     let id: UUID
 }
 
+struct ParsingErrorAlert: Identifiable {
+    let id = UUID()
+    let message: String
+}
+
 struct ConnectionsDocument: FileDocument {
     static var readableContentTypes: [UTType] {[.json] }
 

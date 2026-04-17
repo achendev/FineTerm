@@ -52,16 +52,27 @@ struct WindowCycleService {
     static func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApplication?) {
         let frontID = frontApp?.bundleIdentifier ?? ""
         let skipNonRunning = UserDefaults.standard.bool(forKey: AppConfig.Keys.skipNonRunningApps)
+        let skipMode = UserDefaults.standard.integer(forKey: AppConfig.Keys.skipNonRunningAppsMode)
         
         let workspace = NSWorkspace.shared
         var effectiveBundleIDs = validBundleIDs
         
+        var shouldSkip = false
         if skipNonRunning {
+            if validBundleIDs.count > 1 && (skipMode == 0 || skipMode == 2) {
+                shouldSkip = true
+            } else if validBundleIDs.count == 1 && (skipMode == 1 || skipMode == 2) {
+                shouldSkip = true
+            }
+        }
+        
+        if shouldSkip {
             let runningIDs = Set(workspace.runningApplications.compactMap { $0.bundleIdentifier })
             let filtered = validBundleIDs.filter { runningIDs.contains($0) }
-            if !filtered.isEmpty {
-                effectiveBundleIDs = filtered
+            if filtered.isEmpty {
+                return
             }
+            effectiveBundleIDs = filtered
         }
         
         if !effectiveBundleIDs.contains(frontID) {

@@ -287,6 +287,7 @@ struct AppShortcutsSettingsTab: View {
     @State private var toggleTriggers: [ShortcutTrigger] = []
     
     @AppStorage(AppConfig.Keys.skipNonRunningApps) private var skipNonRunningApps = false
+    @AppStorage(AppConfig.Keys.skipNonRunningAppsMode) private var skipNonRunningAppsMode = 0
 
     var body: some View {
         ScrollView {
@@ -311,8 +312,26 @@ struct AppShortcutsSettingsTab: View {
                     Text("Custom App Shortcuts").font(.headline)
                     Text("Bind global shortcuts to switch to any application instantly.").font(.caption).foregroundColor(.secondary)
                     
-                    Toggle("Skip apps that are not running when cycling", isOn: $skipNonRunningApps)
-                        .padding(.top, 4)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle("Skip apps that are not running", isOn: $skipNonRunningApps)
+                        
+                        if skipNonRunningApps {
+                            HStack {
+                                Text("Apply rule:")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Picker("", selection: $skipNonRunningAppsMode) {
+                                    Text("When cycling multiple apps").tag(0)
+                                    Text("For single-app shortcuts").tag(1)
+                                    Text("Always (Both of the above)").tag(2)
+                                }
+                                .labelsHidden()
+                                .fixedSize()
+                            }
+                            .padding(.leading, 20)
+                        }
+                    }
+                    .padding(.top, 4)
                 }
                 
                 VStack(spacing: 16) {

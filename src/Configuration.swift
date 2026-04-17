@@ -45,6 +45,7 @@ struct AppConfig {
         
         static let customAppShortcuts = "customAppShortcuts"
         static let skipNonRunningApps = "skipNonRunningApps"
+        static let skipNonRunningAppsMode = "skipNonRunningAppsMode"
         
         static let systemModifierSwapEnabled = "systemModifierSwapEnabled"
         static let systemModifierMapFn = "systemModifierMapFn"
@@ -205,6 +206,7 @@ struct AppConfig {
         
         Keys.customAppShortcuts: customAppShortcutsData,
         Keys.skipNonRunningApps: false,
+        Keys.skipNonRunningAppsMode: 0,
         
         Keys.systemModifierSwapEnabled: false,
         Keys.systemModifierMapFn: "control",

@@ -2,6 +2,24 @@ import Cocoa
 
 struct KeyboardEventInjector {
     
+    private static let typingLock = NSLock()
+    private static var _isTyping = false
+    private static var _abortTyping = false
+    
+    static var isTypingActive: Bool {
+        typingLock.lock()
+        defer { typingLock.unlock() }
+        return _isTyping
+    }
+    
+    static func cancelTyping() {
+        typingLock.lock()
+        defer { typingLock.unlock() }
+        if _isTyping {
+            _abortTyping = true
+        }
+    }
+    
     private static let asciiToKeyCode: [Character: (code: CGKeyCode, shift: Bool)] = [
         "a": (0, false), "A": (0, true),
         "s": (1, false), "S": (1, true),
@@ -120,13 +138,37 @@ struct KeyboardEventInjector {
     
     static func typeText(_ text: String, delayMs: UInt32 = 50) {
         DispatchQueue.global(qos: .userInitiated).async {
+            typingLock.lock()
+            _isTyping = true
+            _abortTyping = false
+            typingLock.unlock()
+            
+            defer {
+                typingLock.lock()
+                _isTyping = false
+                _abortTyping = false
+                typingLock.unlock()
+            }
+            
             // Wait 1 second before starting to type to ensure user has released physical modifier keys
-            Thread.sleep(forTimeInterval: 1.0)
+            // Chunked so we can abort instantly
+            for _ in 0..<20 {
+                typingLock.lock()
+                let abort = _abortTyping
+                typingLock.unlock()
+                if abort { return }
+                usleep(50000) // 50ms x 20 = 1s
+            }
             
             let source = CGEventSource(stateID: .hidSystemState)
             let shiftKeyCode: CGKeyCode = 56 // Left Shift
             
             for char in text {
+                typingLock.lock()
+                let abort = _abortTyping
+                typingLock.unlock()
+                if abort { return }
+                
                 let s = String(char)
                 let utf16 = Array(s.utf16)
                 
@@ -172,8 +214,20 @@ struct KeyboardEventInjector {
                     }
                 }
                 
-                // 5. Delay between separate symbols
-                usleep(delayMs * 1000) 
+                // 5. Delay between separate symbols (Chunked to allow instant abort)
+                let totalUs = delayMs * 1000
+                let chunkUs: useconds_t = 10000
+                var elapsedUs: useconds_t = 0
+                while elapsedUs < totalUs {
+                    typingLock.lock()
+                    let innerAbort = _abortTyping
+                    typingLock.unlock()
+                    if innerAbort { return }
+                    
+                    let waitTime = min(chunkUs, totalUs - elapsedUs)
+                    usleep(waitTime)
+                    elapsedUs += waitTime
+                }
             }
         }
     }

@@ -89,6 +89,14 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         }
     }
     
+    // ABORT ACTIVE TYPING: If the user physically presses any key while `typeText` is running, cancel it.
+    // CRITICAL FIX: Only abort on .keyDown. Aborting on .flagsChanged causes the macro to cancel 
+    // the moment the user lifts their finger off the trigger modifier (like Shift).
+    if effectiveType == .keyDown && KeyboardEventInjector.isTypingActive {
+        KeyboardEventInjector.cancelTyping()
+        return nil // Swallow the interrupting key so it doesn't bleed into the terminal
+    }
+    
     let isKeyDownOrUp = effectiveType == .keyDown || effectiveType == .keyUp || effectiveType == .flagsChanged
     let flags = event.flags
     

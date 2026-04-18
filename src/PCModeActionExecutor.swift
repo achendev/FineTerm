@@ -99,6 +99,10 @@ struct PCModeActionExecutor {
         case "select_all": KeyboardEventInjector.injectInstantMacro(keyCode: 0, flags: .maskCommand)
         case "save": KeyboardEventInjector.injectInstantMacro(keyCode: 1, flags: .maskCommand)
         case "find": KeyboardEventInjector.injectInstantMacro(keyCode: 3, flags: .maskCommand)
+        case "type_clipboard":
+            if let string = NSPasteboard.general.string(forType: .string) {
+                KeyboardEventInjector.typeText(string, delayMs: 50)
+            }
         default: break
         }
     }

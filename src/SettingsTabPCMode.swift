@@ -216,7 +216,7 @@ struct PCModeSettingsTab: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("PC Mode Remapping").font(.headline)
-                    Text("Format: 'modifier + key'. Valid Modifiers: cmd, ctrl, opt, shift.\nSequences: Separate multiple actions with commas (e.g. 'ctrl + a, n').\nSpecial Keys: left_arrow, home, delete_or_backspace, spacebar.\nCommands: Use 'shell: open ...', 'func: copy', or 'type: your text here' in the 'to' field.")
+                    Text("Format: 'modifier + key'. Valid Modifiers: cmd, ctrl, opt, shift.\nSequences: Separate multiple actions with commas (e.g. 'ctrl + a, n').\nSpecial Keys: left_arrow, home, delete_or_backspace, spacebar.\nCommands: Use 'shell: open ...', 'func: copy', 'func: type_clipboard', or 'type: text' in the 'to' field.")
                         .font(.caption).foregroundColor(.secondary)
                 }
                 

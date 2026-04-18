@@ -1,12 +1,12 @@
 import Cocoa
 import SwiftUI
 
-class ClipboardWindowManager: NSObject, NSWindowDelegate {
+class LibraryWindowManager: NSObject, NSWindowDelegate {
     private var window: ClipboardWindow!
-    private var store: ClipboardStore
+    private var store: LibraryStore
     private var previousApp: NSRunningApplication?
     
-    init(store: ClipboardStore) {
+    init(store: LibraryStore) {
         self.store = store
         super.init()
         setupWindow()
@@ -19,53 +19,31 @@ class ClipboardWindowManager: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        
-        window.title = "Clipboard History"
+        window.title = "Library"
         window.level = .floating
-        
-        // CRITICAL: .canJoinAllSpaces allows the window to appear on the current desktop 
-        // without forcing a switch to the Main Window's desktop.
-        // .fullScreenAuxiliary allows it to appear over full screen apps.
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.isReleasedWhenClosed = false
         window.delegate = self
         
-        // Setup Close/Esc Callback
-        window.onEsc = {[weak self] in
-            self?.close()
-        }
+        window.onEsc = { [weak self] in self?.close() }
     }
     
     func toggle() {
-        if window.isVisible {
-            close()
-        } else {
-            show()
-        }
+        if window.isVisible { close() } else { show() }
     }
     
     func show() {
-        // Capture previous app to restore focus later
         if let currentApp = NSWorkspace.shared.frontmostApplication {
             if currentApp.bundleIdentifier != Bundle.main.bundleIdentifier {
                 previousApp = currentApp
             }
         }
-        
         window.center()
-        
-        // Ordering the window front behaves like a 'local' action on the current space
-        // because of .canJoinAllSpaces.
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
-        
-        // Activate App
         NSApp.activate(ignoringOtherApps: true)
         
-        // Inject fresh view
-        let contentView = ClipboardHistoryView(store: store) { [weak self] in
-            self?.close()
-        }
+        let contentView = LibraryView(store: store) { [weak self] in self?.close() }
         window.contentView = NSHostingView(rootView: contentView)
     }
     
@@ -76,36 +54,18 @@ class ClipboardWindowManager: NSObject, NSWindowDelegate {
         // TEAR DOWN VIEW - Fixes SwiftUI memory/observer leaks in the background
         window.contentView = nil
         
-        // Logic to return focus
         if let prev = previousApp, !prev.isTerminated {
             prev.activate(options: [])
             previousApp = nil
         } else {
-            // Check if Main Window (Session Manager) is visible
             let hasVisibleMainWindow = NSApp.windows.contains { $0 !== window && $0.isVisible && !$0.isMiniaturized }
-            
-            // If the Session Manager is closed, hide the app to behave like a background utility.
-            if !hasVisibleMainWindow {
-                NSApp.hide(nil)
-            }
+            if !hasVisibleMainWindow { NSApp.hide(nil) }
         }
-    }
-    
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if sender === window {
-            close()
-            return false 
-        }
-        return true
     }
     
     func windowDidResignKey(_ notification: Notification) {
         if let win = notification.object as? NSWindow, win === window {
-            DispatchQueue.main.async {
-                if self.window.isVisible {
-                    self.close()
-                }
-            }
+            DispatchQueue.main.async { if self.window.isVisible { self.close() } }
         }
     }
 }

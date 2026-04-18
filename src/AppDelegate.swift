@@ -11,6 +11,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     var clipboardStore: ClipboardStore!
     var clipboardManager: ClipboardWindowManager!
+    
+    var libraryStore: LibraryStore!
+    var libraryManager: LibraryWindowManager!
+    var libraryAddManager: LibraryAddWindowManager!
+    
     var settingsManager: SettingsWindowManager!
     
     // Live Snapping Observer
@@ -33,8 +38,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // 5. Setup Services
         clipboardStore = ClipboardStore()
         clipboardManager = ClipboardWindowManager(store: clipboardStore)
-        // Pass the store to SettingsWindowManager
-        settingsManager = SettingsWindowManager(store: clipboardStore)
+        
+        libraryStore = LibraryStore()
+        libraryManager = LibraryWindowManager(store: libraryStore)
+        libraryAddManager = LibraryAddWindowManager(store: libraryStore)
+        
+        // Pass dependencies to SettingsWindowManager
+        settingsManager = SettingsWindowManager(store: clipboardStore, libraryStore: libraryStore)
         
         // 6. Check Permissions & Launch
         checkPermissionsAndStart()
@@ -72,8 +82,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         refreshTerminalObserverState()
         
         // Monitor Application Lifecycle to enable/disable snapping based on Terminal's presence
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] notif in
-            guard let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) {[weak self] notif in
+            guard let app = notif.userInfo? [NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
             if app.bundleIdentifier == target {
                 self?.refreshTerminalObserverState()
@@ -81,7 +91,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] notif in
-            guard let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            guard let app = notif.userInfo? [NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
             
             // CRITICAL FIX: Revert window behavior immediately when Terminal quits
@@ -322,6 +332,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     if let mainWin = self.window, let keyWindow = NSApp.keyWindow, keyWindow !== mainWin {
                         self.settingsManager.close()
                         self.clipboardManager.close()
+                        self.libraryManager.close()
+                        self.libraryAddManager.close()
                         if mainWin.isMiniaturized { mainWin.deminiaturize(nil) }
                         mainWin.makeKeyAndOrderFront(nil)
                         return nil
@@ -333,6 +345,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     func toggleClipboardWindow() { clipboardManager.toggle() }
+    func toggleLibraryWindow() { libraryManager.toggle() }
+    func showLibraryAddWindow() { libraryAddManager.show() }
     @objc func openSettings() { settingsManager.open() }
     @objc func clearClipboardHistory() { clipboardStore.clear() }
 

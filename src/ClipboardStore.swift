@@ -35,7 +35,7 @@ class ClipboardStore: ObservableObject {
         blobsURL = appDir.appendingPathComponent("clipboard_blobs.enc")
         lastChangeCount = NSPasteboard.general.changeCount
         
-        let loaded = ClipboardCrypto.load(fileURL: fileURL, blobsURL: blobsURL)
+        let loaded = ClipboardCrypto.load(fileURL: fileURL, blobsURL: blobsURL, as: ClipboardItem.self)
         self.history = loaded.history
         self.blobs = loaded.blobs
     }

@@ -34,6 +34,12 @@ struct AppConfig {
         static let clipboardHistorySize = "clipboardHistorySize"
         static let clipboardMaxImages = "clipboardMaxImages"
         
+        static let enableLibraryManager = "enableLibraryManager"
+        static let libraryAddShortcutKey = "libraryAddShortcutKey"
+        static let libraryAddShortcutModifier = "libraryAddShortcutModifier"
+        static let libraryOpenShortcutKey = "libraryOpenShortcutKey"
+        static let libraryOpenShortcutModifier = "libraryOpenShortcutModifier"
+        
         static let clipboardShiftEnterToEditor = "clipboardShiftEnterToEditor"
         static let clipboardEditorBundleID = "clipboardEditorBundleID"
         static let clipboardTempExtension = "clipboardTempExtension"
@@ -192,6 +198,12 @@ struct AppConfig {
         Keys.clipboardHistorySize: 100,
         Keys.clipboardMaxImages: 50,
         
+        Keys.enableLibraryManager: false,
+        Keys.libraryAddShortcutKey: "n",
+        Keys.libraryAddShortcutModifier: "option",
+        Keys.libraryOpenShortcutKey: "m",
+        Keys.libraryOpenShortcutModifier: "option",
+        
         Keys.clipboardShiftEnterToEditor: true,
         Keys.clipboardEditorBundleID: "com.sublimetext.4",
         Keys.clipboardTempExtension: "sh",
@@ -242,11 +254,9 @@ struct AppConfig {
         for key in defaults.keys {
             let val = UserDefaults.standard.object(forKey: key) ?? defaults[key]
             if let dataVal = val as? Data {
-                // To make it user-readable, attempt to decode inner Data back to JSON objects (Arrays/Dictionaries)
                 if let jsonObject = try? JSONSerialization.jsonObject(with: dataVal, options: []) {
                     dict[key] = jsonObject
                 } else {
-                    // Fallback for raw binary data
                     dict[key] = dataVal.base64EncodedString()
                 }
             } else {
@@ -261,16 +271,12 @@ struct AppConfig {
         for (key, val) in dict {
             guard defaults.keys.contains(key) else { continue }
             
-            // Reconstruct Data types
             if defaults[key] is Data {
-                // If it's a user-friendly Array or Dictionary in the JSON file, serialize it back to Data
                 if let arrayVal = val as? [Any], let jsonData = try? JSONSerialization.data(withJSONObject: arrayVal) {
                     UserDefaults.standard.set(jsonData, forKey: key)
                 } else if let dictVal = val as? [String: Any], let jsonData = try? JSONSerialization.data(withJSONObject: dictVal) {
                     UserDefaults.standard.set(jsonData, forKey: key)
-                } 
-                // Fallback for old backups encoded as Base64 strings
-                else if let strVal = val as? String, let decodedData = Data(base64Encoded: strVal) {
+                } else if let strVal = val as? String, let decodedData = Data(base64Encoded: strVal) {
                     UserDefaults.standard.set(decodedData, forKey: key)
                 }
             } else {

@@ -6,6 +6,7 @@ enum SettingsTab: String, CaseIterable {
     case apps = "Apps"
     case pcmode = "PC Mode"
     case clipboard = "Clipboard"
+    case library = "Library"
     case terminal = "Terminal"
     case advanced = "Advanced"
 }
@@ -47,6 +48,7 @@ struct ModifierPickerContent: View {
 
 struct SettingsView: View {
     @ObservedObject var clipboardStore: ClipboardStore
+    @ObservedObject var libraryStore: LibraryStore
     @State private var selectedTab: SettingsTab = .connections
 
     var body: some View {
@@ -56,6 +58,7 @@ struct SettingsView: View {
                 Text("Apps").tag(SettingsTab.apps)
                 Text("PC Mode").tag(SettingsTab.pcmode)
                 Text("Clipboard").tag(SettingsTab.clipboard)
+                Text("Library").tag(SettingsTab.library)
                 Text("Terminal").tag(SettingsTab.terminal)
                 Text("Advanced").tag(SettingsTab.advanced)
             }
@@ -81,6 +84,8 @@ struct SettingsView: View {
                     PCModeSettingsTab()
                 case .clipboard:
                     ClipboardSettingsTab(clipboardStore: clipboardStore)
+                case .library:
+                    LibrarySettingsTab(libraryStore: libraryStore)
                 case .terminal:
                     TerminalSettingsTab()
                 case .advanced:

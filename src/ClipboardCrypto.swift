@@ -17,7 +17,7 @@ struct ClipboardCrypto {
         }
     }
 
-    static func save(history: [ClipboardItem], blobs: [UUID: String], fileURL: URL, blobsURL: URL) {
+    static func save<T: Codable>(history: [T], blobs: [UUID: String], fileURL: URL, blobsURL: URL) {
         do {
             let key = getEncryptionKey()
             let historyData = try JSONEncoder().encode(history)
@@ -36,20 +36,20 @@ struct ClipboardCrypto {
                 try? FileManager.default.removeItem(at: blobsURL)
             }
         } catch {
-            print("Clipboard Save Error: \(error)")
+            print("Crypto Save Error: \(error)")
         }
     }
 
-    static func load(fileURL: URL, blobsURL: URL) -> (history: [ClipboardItem], blobs: [UUID: String]) {
+    static func load<T: Codable>(fileURL: URL, blobsURL: URL, as type: T.Type) -> (history: [T], blobs: [UUID: String]) {
         let key = getEncryptionKey()
         let decoder = JSONDecoder()
-        var history: [ClipboardItem] = []
+        var history: [T] = []
         var blobs: [UUID: String] = [:]
 
         if let encryptedData = try? Data(contentsOf: fileURL),
            let sealedBox = try? AES.GCM.SealedBox(combined: encryptedData),
            let decryptedData = try? AES.GCM.open(sealedBox, using: key),
-           let h = try? decoder.decode([ClipboardItem].self, from: decryptedData) {
+           let h = try? decoder.decode([T].self, from: decryptedData) {
             history = h
         }
 

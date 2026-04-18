@@ -2,13 +2,11 @@ import Cocoa
 import SwiftUI
 
 class SettingsWindow: NSWindow {
-    // Callback for Esc
     private var localMonitor: Any?
 
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
         
-        // Intercept Esc (53) locally for this window
         self.localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self, self.isKeyWindow else { return event }
             
@@ -34,9 +32,11 @@ class SettingsWindow: NSWindow {
 class SettingsWindowManager: NSObject, NSWindowDelegate {
     private var window: SettingsWindow?
     private var clipboardStore: ClipboardStore!
+    private var libraryStore: LibraryStore!
     
-    init(store: ClipboardStore) {
+    init(store: ClipboardStore, libraryStore: LibraryStore) {
         self.clipboardStore = store
+        self.libraryStore = libraryStore
         super.init()
     }
     
@@ -47,9 +47,8 @@ class SettingsWindowManager: NSObject, NSWindowDelegate {
             return
         }
         
-        // Widened default width from 450 to 550 to give the segmented control more room
         let newWindow = SettingsWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 550, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -61,8 +60,7 @@ class SettingsWindowManager: NSObject, NSWindowDelegate {
         newWindow.setFrameAutosaveName("Settings Window")
         newWindow.delegate = self
         
-        // Pass store dependency
-        let settingsView = SettingsView(clipboardStore: clipboardStore)
+        let settingsView = SettingsView(clipboardStore: clipboardStore, libraryStore: libraryStore)
         
         newWindow.contentView = NSHostingView(rootView: settingsView)
         

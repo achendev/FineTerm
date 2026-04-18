@@ -191,7 +191,9 @@ struct ClipboardHistoryView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { isSearchFocused = true }
             flagsMonitor.start()
             keyHandler.start { event in
-                guard let window = event.window, window is ClipboardWindow else { return false }
+                // Prevent background view leaks from hijacking other windows
+                guard let window = event.window, window.title == "Clipboard History" else { return false }
+                
                 switch event.keyCode {
                 case 126: viewModel.moveSelection(-1); return true
                 case 125: viewModel.moveSelection(1); return true

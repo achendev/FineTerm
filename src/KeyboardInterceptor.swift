@@ -147,8 +147,20 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
                                             keyStr: defaults.string(forKey: AppConfig.Keys.clipboardShortcutKey) ?? "u",
                                             mod1Str: defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command",
                                             mod2Str: nil)
+
+    let isLibraryAddMatch = defaults.bool(forKey: AppConfig.Keys.enableLibraryManager) &&
+                      KeyboardMatcher.isGlobalShortcutMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags,
+                                            keyStr: defaults.string(forKey: AppConfig.Keys.libraryAddShortcutKey) ?? "n",
+                                            mod1Str: defaults.string(forKey: AppConfig.Keys.libraryAddShortcutModifier) ?? "option",
+                                            mod2Str: nil)
+                                            
+    let isLibraryOpenMatch = defaults.bool(forKey: AppConfig.Keys.enableLibraryManager) &&
+                      KeyboardMatcher.isGlobalShortcutMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags,
+                                            keyStr: defaults.string(forKey: AppConfig.Keys.libraryOpenShortcutKey) ?? "m",
+                                            mod1Str: defaults.string(forKey: AppConfig.Keys.libraryOpenShortcutModifier) ?? "option",
+                                            mod2Str: nil)
     
-    if !isNextMatch && !isPrevMatch && !isToggleGroupMatch && matchedCustomShortcut == nil && !isMainMatch && !isToggleMatch && !isClipMatch {
+    if !isNextMatch && !isPrevMatch && !isToggleGroupMatch && matchedCustomShortcut == nil && !isMainMatch && !isToggleMatch && !isClipMatch && !isLibraryAddMatch && !isLibraryOpenMatch {
         return Unmanaged.passUnretained(event)
     }
     
@@ -196,6 +208,20 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return effectiveType == .keyDown ? nil : Unmanaged.passUnretained(event)
     }
     
+    if isLibraryAddMatch {
+        DispatchQueue.main.async {
+            if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.showLibraryAddWindow() }
+        }
+        return nil
+    }
+
+    if isLibraryOpenMatch {
+        DispatchQueue.main.async {
+            if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.toggleLibraryWindow() }
+        }
+        return nil
+    }
+
     let target = defaults.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
     let isTerminalFront = frontApp?.bundleIdentifier == target
     let isFineTermFront = NSRunningApplication.current.isActive

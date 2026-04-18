@@ -153,7 +153,7 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     }
     
     if isNextMatch || isPrevMatch || isToggleGroupMatch {
-        let validShortcuts = KeyboardCache.shared.customShortcuts.filter { $0.isEnabled && $0.bundleIDs.contains(where: { !$0.isEmpty }) }
+        let validShortcuts = WindowCycleService.getActivatableShortcuts()
         if !validShortcuts.isEmpty {
             var target: CustomAppShortcut?
             var currentIdx = -1
@@ -167,7 +167,8 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
             }
             
             if isNextMatch {
-                let nextIdx = (currentIdx + 1) % validShortcuts.count
+                let baseIdx = currentIdx == -1 ? -1 : currentIdx
+                let nextIdx = (baseIdx + 1) % validShortcuts.count
                 target = validShortcuts[nextIdx]
             } else if isPrevMatch {
                 let baseIdx = currentIdx == -1 ? 0 : currentIdx

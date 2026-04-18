@@ -48,6 +48,35 @@ struct WindowCycleService {
             activateApp(bundleID: target)
         }
     }
+    
+    static func getActivatableShortcuts() -> [CustomAppShortcut] {
+        let workspace = NSWorkspace.shared
+        let runningIDs = Set(workspace.runningApplications.compactMap { $0.bundleIdentifier })
+        
+        let validShortcuts = KeyboardCache.shared.customShortcuts.filter { $0.isEnabled && $0.bundleIDs.contains(where: { !$0.isEmpty }) }
+        
+        let skipNonRunning = UserDefaults.standard.bool(forKey: AppConfig.Keys.skipNonRunningApps)
+        let skipMode = UserDefaults.standard.integer(forKey: AppConfig.Keys.skipNonRunningAppsMode)
+        
+        if !skipNonRunning {
+            return validShortcuts
+        }
+        
+        return validShortcuts.filter { shortcut in
+            let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
+            var shouldSkip = false
+            if validBundleIDs.count > 1 && (skipMode == 0 || skipMode == 2) {
+                shouldSkip = true
+            } else if validBundleIDs.count == 1 && (skipMode == 1 || skipMode == 2) {
+                shouldSkip = true
+            }
+            
+            if shouldSkip {
+                return validBundleIDs.contains { runningIDs.contains($0) }
+            }
+            return true
+        }
+    }
 
     static func executeCustomShortcutCycle(validBundleIDs: [String], frontApp: NSRunningApplication?) {
         let frontID = frontApp?.bundleIdentifier ?? ""

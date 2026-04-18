@@ -187,8 +187,29 @@ class PCModeProcessor {
                     
                     if shouldExecute {
                         if let cmd = map.funcCommand {
-                            if cmd == "lang_switch" {
+                            switch cmd {
+                            case "lang_switch":
                                 LangSwitchService.shared.switchKeyboardLanguage()
+                            case "copy":
+                                KeyboardEventInjector.injectInstantMacro(keyCode: 8, flags: .maskCommand) // 'c'
+                            case "paste":
+                                KeyboardEventInjector.injectInstantMacro(keyCode: 9, flags: .maskCommand) // 'v'
+                            case "cut":
+                                KeyboardEventInjector.injectInstantMacro(keyCode: 7, flags: .maskCommand) // 'x'
+                            case "undo":
+                                KeyboardEventInjector.injectInstantMacro(keyCode: 6, flags: .maskCommand) // 'z'
+                            case "redo":
+                                var flags: CGEventFlags = .maskCommand
+                                flags.insert(.maskShift)
+                                KeyboardEventInjector.injectInstantMacro(keyCode: 6, flags: flags) // shift+cmd+z
+                            case "select_all":
+                                KeyboardEventInjector.injectInstantMacro(keyCode: 0, flags: .maskCommand) // 'a'
+                            case "save":
+                                KeyboardEventInjector.injectInstantMacro(keyCode: 1, flags: .maskCommand) // 's'
+                            case "find":
+                                KeyboardEventInjector.injectInstantMacro(keyCode: 3, flags: .maskCommand) // 'f'
+                            default:
+                                break
                             }
                         }
                         activeRemaps[rawKeyCode] = (keyCode: 0, flags: []) // Track so KeyUp/ModRelease is swallowed smoothly

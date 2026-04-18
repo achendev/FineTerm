@@ -37,7 +37,7 @@ struct PCModeRuleRowView: View {
                         
                         Text("to").font(.caption).foregroundColor(.secondary)
                         
-                        TextField("e.g. cmd + c or shell: ...", text: $rule.mappings[mappingIndex].to)
+                        TextField("e.g. func: copy or cmd + c", text: $rule.mappings[mappingIndex].to)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                             .frame(maxWidth: .infinity)
                             
@@ -52,7 +52,7 @@ struct PCModeRuleRowView: View {
                 }
                 
                 Button(action: {
-                    rule.mappings.append(KeyMap(from: "ctrl + c", to: "cmd + c"))
+                    rule.mappings.append(KeyMap(from: "ctrl + c", to: "func: copy"))
                 }) {
                     Text("+ Add Key Mapping").font(.caption)
                 }
@@ -216,7 +216,7 @@ struct PCModeSettingsTab: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("PC Mode Remapping").font(.headline)
-                    Text("Format: 'modifier + key'. Valid Modifiers: cmd, ctrl, opt, shift.\nSequences: Separate multiple actions with commas (e.g. 'ctrl + a, n').\nSpecial Keys: left_arrow, home, delete_or_backspace, spacebar.\nCommands: Use 'shell: open ...' or 'func: lang_switch' in the 'to' field.")
+                    Text("Format: 'modifier + key'. Valid Modifiers: cmd, ctrl, opt, shift.\nSequences: Separate multiple actions with commas (e.g. 'ctrl + a, n').\nSpecial Keys: left_arrow, home, delete_or_backspace, spacebar.\nCommands: Use 'shell: open ...' or 'func: copy' / 'func: lang_switch' in the 'to' field.")
                         .font(.caption).foregroundColor(.secondary)
                 }
                 
@@ -249,7 +249,7 @@ struct PCModeSettingsTab: View {
                 Button(action: {
                     withAnimation {
                         let emptyRule = PCModeRule(name: "New Group", isEnabled: true, mappings: [
-                            KeyMap(from: "ctrl + c", to: "cmd + c")
+                            KeyMap(from: "ctrl + c", to: "func: copy")
                         ])
                         rules.append(emptyRule)
                     }

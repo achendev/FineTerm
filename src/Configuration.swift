@@ -104,14 +104,14 @@ struct AppConfig {
             KeyMap(from: "opt + delete_or_backspace", to: "delete_forward")
         ]),
         PCModeRule(name: "Copy/Paste/Cut/Undo/Find/Save", isEnabled: false, mappings: [
-            KeyMap(from: "ctrl + c", to: "cmd + c"),
-            KeyMap(from: "ctrl + v", to: "cmd + v"),
-            KeyMap(from: "ctrl + x", to: "cmd + x"),
-            KeyMap(from: "ctrl + z", to: "cmd + z"),
-            KeyMap(from: "ctrl + y", to: "cmd + shift + z"),
-            KeyMap(from: "ctrl + a", to: "cmd + a"),
-            KeyMap(from: "ctrl + s", to: "cmd + s"),
-            KeyMap(from: "ctrl + f", to: "cmd + f"),
+            KeyMap(from: "ctrl + c", to: "func: copy"),
+            KeyMap(from: "ctrl + v", to: "func: paste"),
+            KeyMap(from: "ctrl + x", to: "func: cut"),
+            KeyMap(from: "ctrl + z", to: "func: undo"),
+            KeyMap(from: "ctrl + y", to: "func: redo"),
+            KeyMap(from: "ctrl + a", to: "func: select_all"),
+            KeyMap(from: "ctrl + s", to: "func: save"),
+            KeyMap(from: "ctrl + f", to: "func: find"),
             KeyMap(from: "ctrl + g", to: "cmd + g"),
             KeyMap(from: "ctrl + d", to: "cmd + d"),
             KeyMap(from: "ctrl + r", to: "cmd + r"),
@@ -129,7 +129,7 @@ struct AppConfig {
             KeyMap(from: "shift + f10", to: "cmd + shift + 2")
         ]),
         PCModeRule(name: "Shift+F12 to Paste (Standard)", isEnabled: false, mappings: [
-            KeyMap(from: "shift + f12", to: "cmd + v")
+            KeyMap(from: "shift + f12", to: "func: paste")
         ], appFilterMode: .exclude, appBundleIDs: ["org.tabby", "com.mitchellh.ghostty"]),
         PCModeRule(name: "Shift+F12 to Insert (Terminals)", isEnabled: false, mappings: [
             KeyMap(from: "shift + f12", to: "shift + insert")

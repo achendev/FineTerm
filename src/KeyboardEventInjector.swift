@@ -49,4 +49,19 @@ struct KeyboardEventInjector {
             mouseEvent.post(tap: .cghidEventTap)
         }
     }
+    
+    static func injectInstantMacro(keyCode: CGKeyCode, flags: CGEventFlags) {
+        let source = CGEventSource(stateID: .hidSystemState)
+        if let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true) {
+            down.flags = flags
+            down.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+            down.post(tap: .cghidEventTap)
+        }
+        usleep(1000)
+        if let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) {
+            up.flags = flags
+            up.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+            up.post(tap: .cghidEventTap)
+        }
+    }
 }

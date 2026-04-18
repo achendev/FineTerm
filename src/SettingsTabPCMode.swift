@@ -175,14 +175,14 @@ struct PCModeSettingsTab: View {
                                 ModifiersPickerView(selection: $mapCtrl).onChange(of: mapCtrl) { _ in updateModifiers() }
                             }
                             HStack {
-                                Text("Command (⌘) key")
-                                Spacer()
-                                ModifiersPickerView(selection: $mapCmd).onChange(of: mapCmd) { _ in updateModifiers() }
-                            }
-                            HStack {
                                 Text("Option (⌥) key")
                                 Spacer()
                                 ModifiersPickerView(selection: $mapOpt).onChange(of: mapOpt) { _ in updateModifiers() }
+                            }
+                            HStack {
+                                Text("Command (⌘) key")
+                                Spacer()
+                                ModifiersPickerView(selection: $mapCmd).onChange(of: mapCmd) { _ in updateModifiers() }
                             }
                             HStack {
                                 Text("Caps Lock (⇪) key")

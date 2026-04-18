@@ -26,6 +26,16 @@ struct PCModeActionExecutor {
             return true
         }
         
+        if map.isType {
+            if isPress {
+                if let text = map.typeText {
+                    KeyboardEventInjector.typeText(text, delayMs: 50)
+                }
+                PCModeProcessor.shared.activeRemaps[rawKeyCode] = (keyCode: 0, flags: [])
+            }
+            return true
+        }
+        
         if map.toActions.count > 1 {
             if isPress {
                 executeMacro(actions: map.toActions)

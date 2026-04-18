@@ -4,7 +4,6 @@ struct ConnectionListHeader: View {
     @ObservedObject var store: ConnectionStore
     
     @Binding var searchText: String
-    // Removed showSettings binding
     
     @Binding var isImporting: Bool
     @Binding var isExporting: Bool
@@ -12,9 +11,11 @@ struct ConnectionListHeader: View {
     
     var onImportFromClipboard: () -> Void
     var onExportToClipboard: (Bool) -> Void
+    var onUpdateAllParsedGroups: () -> Void
     
     @Binding var isCreatingGroup: Bool
     @Binding var newGroupName: String
+    @Binding var parsingGroupIDs: Set<UUID>
     
     var isSearchFocused: FocusState<Bool>.Binding
     @FocusState private var isGroupNameFocused: Bool
@@ -107,11 +108,29 @@ struct ConnectionListHeader: View {
                 }
             } else {
                 HStack {
-                    Button(action: { isCreatingGroup = true }) {
-                        HStack(spacing: 4) { Image(systemName: "plus.folder"); Text("New Group") }
-                            .font(.caption).foregroundColor(.secondary)
+                    HStack(spacing: 12) {
+                        Button(action: { isCreatingGroup = true }) {
+                            Image(systemName: "folder.badge.plus")
+                                .help("New Group")
+                        }
+                        
+                        if store.groups.contains(where: { ($0.parsingScript?.isEmpty == false) }) {
+                            if !parsingGroupIDs.isEmpty {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .frame(width: 14, height: 14)
+                                    .padding(.leading, 2)
+                            } else {
+                                Button(action: onUpdateAllParsedGroups) {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                        .help("Update All Parsed Groups")
+                                }
+                            }
+                        }
                     }
                     .buttonStyle(.borderless)
+                    .font(.body)
+                    .foregroundColor(.secondary)
                     
                     Spacer()
                     

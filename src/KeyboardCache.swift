@@ -13,7 +13,7 @@ class KeyboardCache {
     
     func start() {
         refresh()
-        userDefaultsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+        userDefaultsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) {[weak self] _ in
             self?.refresh()
         }
     }
@@ -63,6 +63,8 @@ class KeyboardCache {
                         var shellCommand: String? = nil
                         var isFunc = false
                         var funcCommand: String? = nil
+                        var isType = false
+                        var typeText: String? = nil
                         var toActions: [ParsedToAction] = []
                         
                         if map.to.lowercased().hasPrefix("shell:") {
@@ -73,6 +75,11 @@ class KeyboardCache {
                             isFunc = true
                             let cmdStartIndex = map.to.index(map.to.startIndex, offsetBy: 5)
                             funcCommand = String(map.to[cmdStartIndex...]).trimmingCharacters(in: .whitespaces)
+                        } else if map.to.lowercased().hasPrefix("type:") {
+                            isType = true
+                            let cmdStartIndex = map.to.index(map.to.startIndex, offsetBy: 5)
+                            let text = String(map.to[cmdStartIndex...])
+                            typeText = text.hasPrefix(" ") ? String(text.dropFirst()) : text
                         } else {
                             let parts = map.to.components(separatedBy: ",")
                             for part in parts {
@@ -100,6 +107,8 @@ class KeyboardCache {
                             shellCommand: shellCommand,
                             isFunc: isFunc,
                             funcCommand: funcCommand,
+                            isType: isType,
+                            typeText: typeText,
                             toActions: toActions
                         ))
                     }

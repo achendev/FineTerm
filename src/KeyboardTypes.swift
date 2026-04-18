@@ -14,6 +14,8 @@ struct ParsedKeyMap {
     let shellCommand: String?
     let isFunc: Bool
     let funcCommand: String?
+    let isType: Bool
+    let typeText: String?
     let toActions: [ParsedToAction]
 }
 

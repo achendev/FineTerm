@@ -57,8 +57,10 @@ struct ConnectionListView: View {
                 documentToExport: $documentToExport,
                 onImportFromClipboard: importFromClipboard,
                 onExportToClipboard: exportToClipboard,
+                onUpdateAllParsedGroups: updateAllParsedGroups,
                 isCreatingGroup: $isCreatingGroup,
                 newGroupName: $newGroupName,
+                parsingGroupIDs: $parsingGroupIDs,
                 isSearchFocused: $isSearchFocused
             )
             .onTapGesture { if selectedConnectionID != nil || selectedGroupID != nil { resetForm() } }

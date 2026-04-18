@@ -33,7 +33,7 @@ extension ConnectionListView {
     }
     
     // MARK: - Filter Logic
-    func performFilter(_ text: String) -> [Connection] {
+    func performFilter(_ text: String) ->[Connection] {
         if smartFilter {
             // DRY: Using Shared Search Service
             // We combine name and command into a single searchable string
@@ -167,6 +167,20 @@ extension ConnectionListView {
         selectedConnectionID = nil
         selectedGroupID = nil
         lastClickedID = nil
+    }
+    
+    func updateAllParsedGroups() {
+        let groupsToUpdate = store.groups.filter { ($0.parsingScript?.isEmpty == false) }
+        
+        for group in groupsToUpdate {
+            self.parsingGroupIDs.insert(group.id)
+            self.store.runParsingScript(for: group.id) { errorMsg in
+                self.parsingGroupIDs.remove(group.id)
+                if let errorMsg = errorMsg {
+                    self.parsingErrorAlert = ParsingErrorAlert(message: "Group '\(group.name)': \(errorMsg)")
+                }
+            }
+        }
     }
     
     // MARK: - Import / Export

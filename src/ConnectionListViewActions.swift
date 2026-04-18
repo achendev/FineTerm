@@ -89,10 +89,12 @@ extension ConnectionListView {
         store.touch(id: conn.id) // UPDATE LAST USED
         
         let changeTerminalName = UserDefaults.standard.bool(forKey: AppConfig.Keys.changeTerminalName)
+        let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+        let isGhostty = target == "com.mitchellh.ghostty"
         
         // Background terminal name setting
         var terminalNamePrefix = ""
-        if changeTerminalName && conn.setTabName {
+        if changeTerminalName && conn.setTabName && !isGhostty {
             let template = UserDefaults.standard.string(forKey: AppConfig.Keys.terminalTabNameCommand) ?? "( ( sleep 2 ; printf '\\e]1;%s\\a' '$PROFILE_NAME' ) 2>/dev/null & ) 2>/dev/null ; clear ; "
             terminalNamePrefix = template.replacingOccurrences(of: "$PROFILE_NAME", with: conn.name)
                                          .replacingOccurrences(of: "$PROFILE_COMMAND", with: conn.command)
@@ -110,7 +112,14 @@ extension ConnectionListView {
             .replacingOccurrences(of: "$PROFILE_COMMAND", with: conn.command)
         
         let finalCommand = terminalNamePrefix + prefix + conn.command + suffix
-        TerminalBridge.launch(command: finalCommand)
+        
+        if isGhostty {
+            let tabName = (changeTerminalName && conn.setTabName) ? conn.name : nil
+            GhosttyBridge.launch(command: finalCommand, tabName: tabName)
+        } else {
+            TerminalBridge.launch(command: finalCommand)
+        }
+        
         searchText = ""
         highlightedConnectionID = nil
     }

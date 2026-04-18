@@ -1,5 +1,34 @@
 import SwiftUI
 import Cocoa
+import UniformTypeIdentifiers
+
+struct ShortcutDropDelegate: DropDelegate {
+    let item: CustomAppShortcut
+    @Binding var items: [CustomAppShortcut]
+    @Binding var draggedItem: CustomAppShortcut?
+
+    func dropEntered(info: DropInfo) {
+        guard let dragged = draggedItem,
+              dragged.id != item.id,
+              let from = items.firstIndex(where: { $0.id == dragged.id }),
+              let to = items.firstIndex(where: { $0.id == item.id }) else { return }
+
+        if from != to {
+            withAnimation(.default) {
+                items.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+            }
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        return DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedItem = nil
+        return true
+    }
+}
 
 struct NativeAppPicker: NSViewRepresentable {
     @Binding var selection: String
@@ -145,6 +174,14 @@ struct ShortcutRowView: View {
                     ForEach(0..<shortcut.triggers.count, id: \.self) { index in
                         HStack(spacing: 6) {
                             if index == 0 {
+                                Image(systemName: "line.3.horizontal")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 16)
+                                    .onHover { hovering in
+                                        if hovering { NSCursor.openHand.push() } else { NSCursor.pop() }
+                                    }
+                                
                                 Toggle("", isOn: $shortcut.isEnabled)
                                     .labelsHidden()
                                     .toggleStyle(.switch)
@@ -159,7 +196,7 @@ struct ShortcutRowView: View {
                                 .foregroundColor(.accentColor)
                                 .frame(width: 16)
                             } else {
-                                Spacer().frame(width: 38)
+                                Spacer().frame(width: 16 + 6 + 38)
                                 
                                 Button(action: { shortcut.triggers.remove(at: index) }) {
                                     Image(systemName: "minus.circle")
@@ -257,7 +294,7 @@ struct ShortcutRowView: View {
                     }
                 }
             }
-            .padding(.leading, 10)
+            // Padding removed here so the App Selector aligns perfectly with the left edge of the row
         }
         .padding()
         .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
@@ -288,6 +325,8 @@ struct AppShortcutsSettingsTab: View {
     
     @AppStorage(AppConfig.Keys.skipNonRunningApps) private var skipNonRunningApps = false
     @AppStorage(AppConfig.Keys.skipNonRunningAppsMode) private var skipNonRunningAppsMode = 0
+    
+    @State private var draggedShortcut: CustomAppShortcut?
 
     var body: some View {
         ScrollView {
@@ -356,6 +395,11 @@ struct AppShortcutsSettingsTab: View {
                                 withAnimation { shortcuts.removeAll { $0.id == shortcut.id } }
                             }
                         )
+                        .onDrag {
+                            self.draggedShortcut = shortcut
+                            return NSItemProvider(object: shortcut.id.uuidString as NSString)
+                        }
+                        .onDrop(of: [.text, .plainText], delegate: ShortcutDropDelegate(item: shortcut, items: $shortcuts, draggedItem: $draggedShortcut))
                     }
                 }
                 

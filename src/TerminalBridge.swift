@@ -25,21 +25,6 @@ struct TerminalBridge {
                 end tell
             end tell
             """
-        } else if target == "com.mitchellh.ghostty" {
-            scriptSource = """
-            tell application "Ghostty"
-                activate
-            end tell
-            delay 0.2
-            tell application "System Events"
-                tell process "Ghostty"
-                    keystroke "t" using command down
-                    delay 0.2
-                    keystroke "\(escapedCommand)"
-                    key code 36
-                end tell
-            end tell
-            """
         } else {
             scriptSource = """
             tell application "Terminal"

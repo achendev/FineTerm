@@ -229,11 +229,10 @@ struct PCModeSettingsTab: View {
                     Picker("", selection: $pcModeEngine) {
                         Text("Internal (Fastest)").tag(0)
                         Text("Karabiner (Full)").tag(1)
-                        Text("Hybrid (Internal + Karabiner Fallback)").tag(2)
                     }
                     .labelsHidden()
                     .pickerStyle(SegmentedPickerStyle())
-                    .frame(width: 400)
+                    .frame(width: 300)
                     .onChange(of: pcModeEngine) { _ in syncEngine(); updateModifiers() }
                     
                     Spacer()
@@ -294,11 +293,7 @@ struct PCModeSettingsTab: View {
     
     private func syncEngine() {
         if pcModeEngine == 1 {
-            KarabinerExporter.sync(rules: rules, isHybrid: false)
-        } else if pcModeEngine == 2 {
-            KarabinerExporter.sync(rules: rules, isHybrid: true)
-            // Ensure SecureInputMonitor pushes the immediate state
-            NotificationCenter.default.post(name: NSNotification.Name("ForceSecureInputSync"), object: nil)
+            KarabinerExporter.sync(rules: rules)
         } else {
             KarabinerExporter.clear()
         }
@@ -307,7 +302,7 @@ struct PCModeSettingsTab: View {
     private func updateModifiers() {
         SystemModifierManager.applyCurrentSettings()
         // Ensure Karabiner gets updated system modifiers if it's running
-        if pcModeEngine > 0 {
+        if pcModeEngine == 1 {
             syncEngine()
         }
     }
@@ -326,11 +321,8 @@ struct PCModeSettingsTab: View {
             if let encoded = try? JSONEncoder().encode(currentRules) {
                 DispatchQueue.main.async {
                     self.pcModeRulesData = encoded
-                    // Immediately sync with Karabiner if a mode is active
                     if self.pcModeEngine == 1 {
-                        KarabinerExporter.sync(rules: currentRules, isHybrid: false)
-                    } else if self.pcModeEngine == 2 {
-                        KarabinerExporter.sync(rules: currentRules, isHybrid: true)
+                        KarabinerExporter.sync(rules: currentRules)
                     }
                 }
             }

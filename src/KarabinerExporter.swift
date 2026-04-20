@@ -3,9 +3,7 @@ import Foundation
 struct KarabinerExporter {
     static let filePath = NSHomeDirectory() + "/.config/karabiner/karabiner.json"
 
-    static func sync(rules: [PCModeRule], isHybrid: Bool) {
-        clear(commit: false)
-
+    static func sync(rules: [PCModeRule]) {
         guard FileManager.default.fileExists(atPath: filePath),
               let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
               var json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
@@ -22,7 +20,7 @@ struct KarabinerExporter {
         for rule in rules where rule.isEnabled {
             var manipulators: [[String: Any]] = []
             for map in rule.mappings {
-                let mappedManipulators = createManipulators(from: map, appFilterMode: rule.appFilterMode, bundleIDs: rule.appBundleIDs, isHybrid: isHybrid)
+                let mappedManipulators = createManipulators(from: map, appFilterMode: rule.appFilterMode, bundleIDs: rule.appBundleIDs)
                 manipulators.append(contentsOf: mappedManipulators)
             }
             if !manipulators.isEmpty {
@@ -33,7 +31,7 @@ struct KarabinerExporter {
             }
         }
 
-        // 2. Export System Modifier Swaps (Always active, no hybrid condition)
+        // 2. Export System Modifier Swaps
         let systemManipulators = getSystemModifierManipulators()
         if !systemManipulators.isEmpty {
             newRules.append([
@@ -42,8 +40,8 @@ struct KarabinerExporter {
             ])
         }
 
-        // 3. Export Global Shortcuts (URLs)
-        let globalManipulators = getGlobalShortcutManipulators(isHybrid: isHybrid)
+        // 3. Export Global Shortcuts (UDP commands)
+        let globalManipulators = getGlobalShortcutManipulators()
         if !globalManipulators.isEmpty {
             newRules.append([
                 "description": "FineTerm: Global Shortcuts",
@@ -51,40 +49,44 @@ struct KarabinerExporter {
             ])
         }
 
+        var targetProfileIndex = 0
         var profileUpdated = false
         for i in 0..<profiles.count {
             if let selected = profiles[i]["selected"] as? Bool, selected {
-                var complexMods = profiles[i]["complex_modifications"] as? [String: Any] ?? ["rules": []]
-                var existingRules = complexMods["rules"] as? [[String: Any]] ?? []
-
-                existingRules.append(contentsOf: newRules)
-                complexMods["rules"] = existingRules
-                profiles[i]["complex_modifications"] = complexMods
+                targetProfileIndex = i
                 profileUpdated = true
                 break
             }
         }
-        
-        if !profileUpdated && !profiles.isEmpty {
-            var complexMods = profiles[0]["complex_modifications"] as? [String: Any] ?? ["rules": []]
-            var existingRules = complexMods["rules"] as? [[String: Any]] ?? []
 
-            existingRules.append(contentsOf: newRules)
-            complexMods["rules"] = existingRules
-            profiles[0]["complex_modifications"] = complexMods
+        var complexMods = profiles[targetProfileIndex]["complex_modifications"] as? [String: Any] ?? ["rules": []]
+        var existingRules = complexMods["rules"] as? [[String: Any]] ?? []
+
+        // CLEAN EXISTING FINETERM RULES (Fix duplication bug)
+        existingRules = existingRules.filter { rule in
+            if let desc = rule["description"] as? String {
+                return !desc.hasPrefix("FineTerm:")
+            }
+            return true
         }
 
+        // APPEND NEW RULES
+        existingRules.append(contentsOf: newRules)
+        
+        // SAVE
+        complexMods["rules"] = existingRules
+        profiles[targetProfileIndex]["complex_modifications"] = complexMods
         json["profiles"] = profiles
 
         if let newData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) {
             try? newData.write(to: URL(fileURLWithPath: filePath))
             if UserDefaults.standard.bool(forKey: "debugMode") {
-                print("DEBUG: [KarabinerExporter] Successfully synced \(newRules.count) block rules to Karabiner. (Hybrid: \(isHybrid))")
+                print("DEBUG: [KarabinerExporter] Successfully synced \(newRules.count) block rules to Karabiner.")
             }
         }
     }
 
-    static func clear(commit: Bool = true) {
+    static func clear() {
         guard FileManager.default.fileExists(atPath: filePath),
               let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
               var json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
@@ -114,7 +116,7 @@ struct KarabinerExporter {
 
         if modified {
             json["profiles"] = profiles
-            if commit, let newData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) {
+            if let newData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) {
                 try? newData.write(to: URL(fileURLWithPath: filePath))
                 if UserDefaults.standard.bool(forKey: "debugMode") {
                     print("DEBUG: [KarabinerExporter] Cleared existing FineTerm rules from Karabiner.")
@@ -124,11 +126,11 @@ struct KarabinerExporter {
     }
 
     // MARK: - App Shortcuts & Navigations
-    static func getGlobalShortcutManipulators(isHybrid: Bool) -> [[String: Any]] {
+    static func getGlobalShortcutManipulators() -> [[String: Any]] {
         var manipulators: [[String: Any]] = []
 
         func addTrigger(_ trigger: ShortcutTrigger, url: String) {
-            if let m = makeURLManipulator(trigger: trigger, url: url, isHybrid: isHybrid) { manipulators.append(m) }
+            if let m = makeURLManipulator(trigger: trigger, url: url) { manipulators.append(m) }
         }
 
         let d = UserDefaults.standard
@@ -186,7 +188,7 @@ struct KarabinerExporter {
         return[ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
     }
 
-    static func makeURLManipulator(trigger: ShortcutTrigger, url: String, isHybrid: Bool) -> [String: Any]? {
+    static func makeURLManipulator(trigger: ShortcutTrigger, url: String) -> [String: Any]? {
         var k = trigger.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         var primaryMod = trigger.modifier.replacingOccurrences(of: " ", with: "_")
         var secMod = trigger.modifier2?.replacingOccurrences(of: " ", with: "_")
@@ -229,19 +231,13 @@ struct KarabinerExporter {
             fromDict["modifiers"] = ["optional": ["any"]]
         }
 
-        var manipulator: [String: Any] = [
+        let payload = url.replacingOccurrences(of: "fineterm://action/", with: "fineterm/")
+
+        let manipulator: [String: Any] = [
             "type": "basic",
             "from": fromDict,
-            "to": [["shell_command": "open -g '\(url)'"]]
+            "to": [["shell_command": "/bin/bash -c \"echo -n '\(payload)' > /dev/udp/127.0.0.1/61234\""]]
         ]
-
-        if isHybrid {
-            manipulator["conditions"] = [[
-                "type": "variable_if",
-                "name": "fineterm_secure_input",
-                "value": 1
-            ]]
-        }
 
         return manipulator
     }
@@ -298,9 +294,9 @@ struct KarabinerExporter {
 
     // MARK: - Internal Mapping Logic
 
-    static func createManipulators(from map: KeyMap, appFilterMode: AppFilterMode, bundleIDs: [String], isHybrid: Bool) -> [[String: Any]] {
+    static func createManipulators(from map: KeyMap, appFilterMode: AppFilterMode, bundleIDs: [String]) -> [[String: Any]] {
         let fromParts = parse(map.from)
-        guard let fromKey = fromParts.key else { return [] }
+        guard let fromKey = fromParts.key else { return[] }
         
         var keysToMap = [fromKey]
         
@@ -363,14 +359,6 @@ struct KarabinerExporter {
             ]
 
             var conditions: [[String: Any]] = []
-            
-            if isHybrid {
-                conditions.append([
-                    "type": "variable_if",
-                    "name": "fineterm_secure_input",
-                    "value": 1
-                ])
-            }
 
             if appFilterMode != .none && !bundleIDs.isEmpty {
                 let validIDs = bundleIDs.filter { !$0.isEmpty }.map { "^" + $0.replacingOccurrences(of: ".", with: "\\.") + "$" }

@@ -45,8 +45,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         AppFocusTracker.shared.start()
         SystemModifierManager.applyCurrentSettings()
         
-        // Start the Secure Input Monitor for Hybrid Karabiner mode
-        SecureInputMonitor.shared.start()
+        // Start Lightning-fast UDP action server (for Karabiner mode latency fix)
+        LocalActionServer.shared.start()
     }
     
     @objc func handleURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
@@ -78,7 +78,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     func setupTerminalObserver() {
-        terminalObserver = TerminalWindowObserver { [weak self] in
+        terminalObserver = TerminalWindowObserver {[weak self] in
             self?.snapToTerminal()
         }
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(snapToTerminal), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
@@ -90,7 +90,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if app.bundleIdentifier == target { self?.refreshTerminalObserverState() }
         }
         
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] notif in
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) {[weak self] notif in
             guard let app = notif.userInfo? [NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
             if app.bundleIdentifier == target { self?.refreshTerminalObserverState() }
@@ -237,7 +237,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func showPermissionOverlay() {
-        let permissionView = PermissionView { [weak self] in self?.startMainApp() }
+        let permissionView = PermissionView {[weak self] in self?.startMainApp() }
         window.contentView = NSHostingView(rootView: permissionView)
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 380, height: 320))

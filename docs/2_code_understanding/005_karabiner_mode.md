@@ -1,26 +1,19 @@
-# [005] Karabiner-Elements Engine Integration
+#[005] Karabiner-Elements Engine Integration & LocalActionServer
 
 ## 1. Summary
-FineTerm allows users to offload the execution of "PC Mode" rules from the internal `CGEventTap` engine directly into the popular third-party driver, **Karabiner-Elements**. This is crucial for users who want their PC Mode mappings (like `Ctrl+C` -> `Cmd+C`) to function reliably inside macOS Secure Input fields (e.g., password boxes in Chrome or Proxmox web consoles), where normal user-space event taps are blocked by the OS.
+FineTerm allows users to offload "PC Mode" execution to **Karabiner-Elements**. To make this work flawlessly (and fix latency on App Switching), FineTerm establishes a native, lightning-fast UDP communication bridge with Karabiner instead of using sluggish URL schemes.
 
-## 2. Logic Flow / Mental Model (Hybrid Engine)
-To give users the zero-latency feel of `CGEventTap` with the Secure Input fallback of Karabiner, FineTerm uses a **Hybrid Engine (Mode 2)**.
-1.  **Internal Handling:** `PCModeProcessor.swift` natively processes all keys as usual via `CGEventTap` for maximum performance in normal environments.
-2.  **Karabiner Fallback:** FineTerm exports the rules to `karabiner.json`, but prepends a specific condition: `"variable_if": "fineterm_secure_input", "value": 1`. This puts Karabiner's rules to sleep, completely bypassing its latency.
-3.  **Active Monitoring:** `SecureInputMonitor.swift` runs a lightweight 100ms background loop polling the Carbon function `IsSecureEventInputEnabled()`.
-4.  **The Hand-off:** When you click into a password field, the monitor detects the change and fires a CLI command: `karabiner_cli --set-variables '{"fineterm_secure_input": 1}'`. 
-5.  **The Result:** `CGEventTap` naturally goes deaf, and Karabiner instantly activates to handle your macros safely. When you click away, the variable goes back to 0, handing control back to FineTerm seamlessly.
+## 2. LocalActionServer (UDP)
+Previously, if you pressed `Right Cmd` to trigger a Custom App Shortcut in Karabiner Mode, Karabiner executed `open -g fineterm://action/...`. This required spinning up a LaunchServices process, validating the URL, sending an AppleEvent, and then triggering FineTerm. This process took ~200ms.
+*   **The Bleeding Bug:** Because the switch took 200ms, if you typed `L` `S` `Enter` immediately after pressing the shortcut, the letters would "bleed" into your secure password field instead of hitting the new app.
+*   **The Fix:** FineTerm now runs a native `NWListener` (UDP Server) on `127.0.0.1:61234`. Karabiner is instructed to run a native Bash command: `/bin/bash -c "echo -n 'fineterm/...' > /dev/udp/127.0.0.1/61234"`.
+*   **The Result:** The action is transmitted, parsed, and executed in **< 1 millisecond**, making app switching feel entirely native and instantly severing the event stream to the password field.
 
-## 3. Key Classes & Responsibilities
-| Class/File | Role |
-| :--- | :--- |
-| `SettingsTabPCMode.swift` | Provides the Engine toggle UI and triggers `syncEngine()` during throttling saves. |
-| `PCModeProcessor.swift` | Bypasses its own logic if the Karabiner (Full) engine is preferred, or operates normally in Hybrid mode. |
-| `KarabinerExporter.swift` | Safely handles the JSON parsing, injection, modifier mapping, global URL schemes, and file I/O for `~/.config/karabiner/karabiner.json`. Applies `isHybrid` condition tracking. |
-| `SecureInputMonitor.swift` | Constantly monitors `IsSecureEventInputEnabled()` and dynamically manages the `fineterm_secure_input` variable in Karabiner via CLI. |
-| `WindowCycleService.swift` | Holds application focus cycle logic that can be invoked internally or via URL schemes triggered by Karabiner in Secure Fields. |
+## 3. The Double-Swap Bug
+When `pcModeEngine` is set to `1` (Full Karabiner), `SystemModifierManager.swift` forcefully unloads its `hidutil` bindings. Karabiner natively exports System Modifiers globally via `karabiner.json`. If `hidutil` was left running alongside it, the OS would apply the physical swap via Karabiner (e.g. `Cmd` -> `Opt`), and then `hidutil` would see the new state and swap it again. This caused the "Ctrl+Backspace deletes a letter instead of a word" and broken app switching issues.
 
-## 4. Gotchas & Edge Cases
-*   **Modifiers Mapping:** By default, FineTerm is forgiving with extra modifiers. To mimic this behavior, `KarabinerExporter` injects `"optional": ["any"]` into the `from` block of all generated manipulators. Furthermore, all modifiers in the `to` field are explicitly mapped to `left_` variants (e.g., `left_option`) to ensure correct inheritance properties inside Karabiner.
-*   **Secure Input Coverage:** Because Karabiner translates global shortcuts into shell commands that trigger URL schemes, ALL FineTerm global functionality (App swapping, Clipboard Manager, Library) works flawlessly even when typing a password.
-*   **System Modifiers:** Karabiner operates at the raw HID level, which means it completely ignores standard `hidutil` swaps. To compensate, `KarabinerExporter` reads the `systemModifierSwapEnabled` settings and injects them directly into Karabiner as `complex_modifications`, overriding `hidutil` without conditions (even in Hybrid Mode).
+## 4. The Caps Lock Chaining Bug
+Karabiner evaluates Complex Modifications sequentially but does NOT inherently chain them. If the user mapped Caps Lock to `F20` via System Modifiers, and mapped `F20 -> func:paste` in PC Mode Rules, pressing Caps Lock would just output `F20` and stop. `KarabinerExporter` now automatically injects a duplicate underlying rule targeting `caps_lock` explicitly whenever `F20` is referenced and Caps Lock is physically mapped to it.
+
+## 5. Elimination of Hybrid Mode
+Previous iterations attempted to poll the WindowServer 10 times a second to toggle a `fineterm_secure_input` variable dynamically. This caused high WindowServer CPU usage and unacceptable delays. Hybrid mode was removed. Users now simply choose between "Internal (Fastest)" for standard usage or "Karabiner (Full)" for uncompromising Secure Input compatibility.

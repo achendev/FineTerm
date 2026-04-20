@@ -295,10 +295,45 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.center()
         let contentView = ConnectionListView()
         window.contentView = NSHostingView(rootView: contentView)
-        window.makeKeyAndOrderFront(nil)
+        
         startServices()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        showMainWindowWithTerminalFocus()
+    }
+    
+    func showMainWindowWithTerminalFocus() {
+        let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+        if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == target }) {
+            
+            var terminalOnCurrentSpace = false
+            let pid = terminalApp.processIdentifier
+            let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
+            if let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] {
+                for info in windowList {
+                    if let ownerPID = info[kCGWindowOwnerPID as String] as? Int, ownerPID == pid {
+                        terminalOnCurrentSpace = true
+                        break
+                    }
+                }
+            }
+            
+            if terminalOnCurrentSpace {
+                self.window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            } else {
+                // Terminal is on another space. Bring it to focus to switch workspace
+                terminalApp.activate(options: [.activateIgnoringOtherApps])
+                
+                // Wait for the workspace switch to finish before showing FineTerm
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.window.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
+        } else {
+            // Terminal is not running, just show FineTerm immediately
+            self.window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
     
     func startServices() {
@@ -369,8 +404,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if window.isMiniaturized { window.deminiaturize(nil) }
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        showMainWindowWithTerminalFocus()
         return true
     }
 }

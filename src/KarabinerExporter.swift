@@ -244,7 +244,7 @@ struct KarabinerExporter {
 
     // MARK: - System Modifier Swaps
     static func getSystemModifierManipulators() -> [[String: Any]] {
-        guard UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) else { return [] }
+        guard UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) else { return[] }
         var manipulators: [[String: Any]] = []
 
         let mapFn = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapFn) ?? "control"
@@ -342,8 +342,24 @@ struct KarabinerExporter {
                     if let k = toParts.key {
                         var tDict: [String: Any] = [:]
                         applyKey(k, to: &tDict)
-                        if !toParts.modifiers.isEmpty {
-                            tDict["modifiers"] = toParts.modifiers
+                        
+                        var outMods = toParts.modifiers
+                        
+                        // FIX: Inject 'fn' for F-Keys and Nav Keys to mimic internal engine perfectly
+                        let mappedK = mapKeyString(k)
+                        let fnKeys: Set<String> = [
+                            "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12", 
+                            "f13", "f14", "f15", "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23", "f24",
+                            "home", "end", "page_up", "page_down", "left_arrow", "right_arrow", "up_arrow", "down_arrow",
+                            "insert", "delete_forward"
+                        ]
+                        
+                        if fnKeys.contains(mappedK) && !outMods.contains("fn") {
+                            outMods.append("fn")
+                        }
+                        
+                        if !outMods.isEmpty {
+                            tDict["modifiers"] = outMods
                         }
                         toArray.append(tDict)
                     }
@@ -381,11 +397,24 @@ struct KarabinerExporter {
     }
 
     static func applyKey(_ k: String, to dict: inout [String: Any]) {
-        switch k {
+        let mapped = mapKeyString(k)
+        switch mapped {
         case "button1", "left_click": dict["pointing_button"] = "button1"
         case "button2", "right_click": dict["pointing_button"] = "button2"
         case "button3", "middle_click": dict["pointing_button"] = "button3"
-        default: dict["key_code"] = mapKeyString(k)
+        // FIX: Ensure media keys map to `consumer_key_code` instead of `key_code` in Karabiner
+        case "volume_increment", "volume_decrement", "mute", "play_or_pause", "fastforward", "rewind", "display_brightness_increment", "display_brightness_decrement", "illumination_increment", "illumination_decrement":
+            dict["consumer_key_code"] = mapped
+        case "vol_up": dict["consumer_key_code"] = "volume_increment"
+        case "vol_down": dict["consumer_key_code"] = "volume_decrement"
+        case "play", "play_pause": dict["consumer_key_code"] = "play_or_pause"
+        case "next_track": dict["consumer_key_code"] = "fastforward"
+        case "prev_track": dict["consumer_key_code"] = "rewind"
+        case "brightness_up": dict["consumer_key_code"] = "display_brightness_increment"
+        case "brightness_down": dict["consumer_key_code"] = "display_brightness_decrement"
+        case "kbd_brightness_up": dict["consumer_key_code"] = "illumination_increment"
+        case "kbd_brightness_down": dict["consumer_key_code"] = "illumination_decrement"
+        default: dict["key_code"] = mapped
         }
     }
 

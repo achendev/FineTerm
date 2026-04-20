@@ -18,94 +18,88 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     var settingsManager: SettingsWindowManager!
     
-    // Live Snapping Observer
     var terminalObserver: TerminalWindowObserver?
+    
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURLEvent(_:withReplyEvent:)), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+    }
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        // 1. Setup Logging
         setupLogging()
-        
-        // 2. Setup Configuration
         AppConfig.registerDefaults()
-        
-        // 3. Setup Menu
         MenuManager.setupMainMenu()
-        
-        // 4. Setup Window & Policy
         NSApp.setActivationPolicy(.regular)
         setupMainWindow()
         
-        // 5. Setup Services
         clipboardStore = ClipboardStore()
         clipboardManager = ClipboardWindowManager(store: clipboardStore)
-        
         libraryStore = LibraryStore()
         libraryManager = LibraryWindowManager(store: libraryStore)
         libraryAddManager = LibraryAddWindowManager(store: libraryStore)
-        
-        // Pass dependencies to SettingsWindowManager
         settingsManager = SettingsWindowManager(store: clipboardStore, libraryStore: libraryStore)
         
-        // 6. Check Permissions & Launch
         checkPermissionsAndStart()
-        
-        // 7. Setup Local Shortcut Monitor
         setupLocalShortcutMonitor()
-
-        // 8. Warmup Text Editor Detector
         TextEditorBridge.shared.warmUp()
-        
-        // 9. Setup Live Snapping Observer
         setupTerminalObserver()
-        
-        // 10. Start App Focus Tracker
         AppFocusTracker.shared.start()
-        
-        // 11. Apply System Modifier Swap (if enabled)
         SystemModifierManager.applyCurrentSettings()
+        
+        // Start the Secure Input Monitor for Hybrid Karabiner mode
+        SecureInputMonitor.shared.start()
+    }
+    
+    @objc func handleURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString),
+              url.scheme == "fineterm",
+              url.host == "action" else { return }
+
+        let path = url.path
+        let query = url.query
+
+        DispatchQueue.main.async {
+            switch path {
+            case "/next-group": WindowCycleService.executeCycle(isNext: true, isPrev: false, isToggle: false)
+            case "/prev-group": WindowCycleService.executeCycle(isNext: false, isPrev: true, isToggle: false)
+            case "/toggle-group": WindowCycleService.executeCycle(isNext: false, isPrev: false, isToggle: true)
+            case "/custom-shortcut":
+                if let q = query, let idString = q.components(separatedBy: "=").last, let id = UUID(uuidString: idString) {
+                    WindowCycleService.executeCustomShortcut(by: id)
+                }
+            case "/clipboard": self.toggleClipboardWindow()
+            case "/library-add": self.showLibraryAddWindow()
+            case "/library-open": self.toggleLibraryWindow()
+            case "/terminal-toggle": WindowCycleService.handleTerminalToggle()
+            case "/main-toggle": WindowCycleService.handleMainToggle()
+            default: break
+            }
+        }
     }
     
     func setupTerminalObserver() {
         terminalObserver = TerminalWindowObserver { [weak self] in
             self?.snapToTerminal()
         }
-        
-        // Monitor Space Changes to trigger snap/hide logic
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self, 
-            selector: #selector(snapToTerminal), 
-            name: NSWorkspace.activeSpaceDidChangeNotification, 
-            object: nil
-        )
-        
-        // Update state initially
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(snapToTerminal), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         refreshTerminalObserverState()
         
-        // Monitor Application Lifecycle to enable/disable snapping based on Terminal's presence
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) {[weak self] notif in
             guard let app = notif.userInfo? [NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
-            if app.bundleIdentifier == target {
-                self?.refreshTerminalObserverState()
-            }
+            if app.bundleIdentifier == target { self?.refreshTerminalObserverState() }
         }
         
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] notif in
             guard let app = notif.userInfo? [NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
-            
-            // CRITICAL FIX: Revert window behavior immediately when Terminal quits
-            if app.bundleIdentifier == target {
-                self?.refreshTerminalObserverState()
-            }
+            if app.bundleIdentifier == target { self?.refreshTerminalObserverState() }
         }
     }
     
     @objc func refreshTerminalObserverState() {
         let shouldSnap = UserDefaults.standard.bool(forKey: AppConfig.Keys.snapToTerminal)
         let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
-        
-        // Check if Terminal is actually running
         let terminalApp = NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == target }
         let isTerminalRunning = terminalApp != nil && !terminalApp!.isTerminated
         
@@ -125,29 +119,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if !UserDefaults.standard.bool(forKey: AppConfig.Keys.snapToTerminal) { return }
         
         let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
-        
-        // 1. Find the Terminal App Process
         guard let termApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == target }) else { return }
         let pid = termApp.processIdentifier
         
-        // 2. Get Window List to find Terminal's window bounds ON CURRENT SCREEN
-        // .optionOnScreenOnly filters out windows on other Spaces
         let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
         guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return }
         
-        // 3. Find the main Terminal window
         var foundTerminal = false
         var termRect: CGRect = .zero
         
         for info in windowList {
-            guard let ownerPID = info[kCGWindowOwnerPID as String] as? Int,
-                  ownerPID == pid,
+            guard let ownerPID = info[kCGWindowOwnerPID as String] as? Int, ownerPID == pid,
                   let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat],
-                  let width = boundsDict["Width"],
-                  let height = boundsDict["Height"],
+                  let width = boundsDict["Width"], let height = boundsDict["Height"],
                   width > 100, height > 100 else { continue }
             
-            // Only consider the first valid terminal window found
             let x = boundsDict["X"] ?? 0
             let y = boundsDict["Y"] ?? 0
             termRect = CGRect(x: x, y: y, width: width, height: height)
@@ -155,12 +141,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             break
         }
         
-        // 4. Handle Visibility & Snapping
         if foundTerminal {
-            // Terminal IS on this space -> Show and Snap
-            if !window.isVisible {
-                window.makeKeyAndOrderFront(nil)
-            }
+            if !window.isVisible { window.makeKeyAndOrderFront(nil) }
             
             var x = termRect.origin.x
             let y = termRect.origin.y
@@ -170,8 +152,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let fixedWidth: CGFloat = 220
             let gap: CGFloat = 1
             
-            // --- RESIZE LOGIC ---
-            // Determine screen of Terminal window
             var targetScreen = NSScreen.screens.first
             for screen in NSScreen.screens {
                 if x >= screen.frame.minX && x < screen.frame.maxX {
@@ -184,7 +164,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 let minX = screen.frame.minX
                 let screenWidth = screen.frame.width - 3
                 
-                // If Terminal is too far left
                 if x - minX < fixedWidth + gap {
                     let newTermX = minX + fixedWidth + gap
                     var newTermWidth = width
@@ -205,45 +184,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         end tell
                         """
                         var error: NSDictionary?
-                        if let nsScript = NSAppleScript(source: script) {
-                            nsScript.executeAndReturnError(&error)
-                        }
+                        if let nsScript = NSAppleScript(source: script) { nsScript.executeAndReturnError(&error) }
                         x = newTermX
                         width = newTermWidth
                     }
                 }
             }
             
-            // Calculate FineTerm Frame
             guard let primaryScreen = NSScreen.screens.first else { return }
             let screenHeight = primaryScreen.frame.height
             let cocoaY = screenHeight - (y + height)
             let cocoaX = x - fixedWidth - gap
             let newFrame = NSRect(x: cocoaX, y: cocoaY, width: fixedWidth, height: height)
             
-            if window.frame != newFrame {
-                window.setFrame(newFrame, display: true)
-            }
-            
+            if window.frame != newFrame { window.setFrame(newFrame, display: true) }
         } else {
-            // Terminal is NOT on this space (or minimized/hidden)
-            // Fix Blink: Do not blindly orderOut if we just switched spaces.
-            // Only hide if the app itself is hidden.
             if termApp.isHidden {
-                if window.isVisible {
-                    window.orderOut(nil)
-                }
+                if window.isVisible { window.orderOut(nil) }
             }
         }
     }
-    
-    // ... (rest of methods)
     
     func setupLogging() {
         let fileManager = FileManager.default
         let home = fileManager.homeDirectoryForCurrentUser
         let tmpDir = home.appendingPathComponent("tmp")
-        
         do {
             try fileManager.createDirectory(at: tmpDir, withIntermediateDirectories: true, attributes: nil)
             let logFile = tmpDir.appendingPathComponent("fineterm_debug.log")
@@ -258,10 +223,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     func setupMainWindow() {
-        window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 500),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 500), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 320, height: 200)
         window.center()
@@ -271,17 +233,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func checkPermissionsAndStart() {
-        if PermissionManager.checkAccessibility() {
-            startMainApp()
-        } else {
-            showPermissionOverlay()
-        }
+        if PermissionManager.checkAccessibility() { startMainApp() } else { showPermissionOverlay() }
     }
 
     func showPermissionOverlay() {
-        let permissionView = PermissionView { [weak self] in
-            self?.startMainApp()
-        }
+        let permissionView = PermissionView { [weak self] in self?.startMainApp() }
         window.contentView = NSHostingView(rootView: permissionView)
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 380, height: 320))
@@ -293,9 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.setContentSize(NSSize(width: 320, height: 500))
         window.center()
-        let contentView = ConnectionListView()
-        window.contentView = NSHostingView(rootView: contentView)
-        
+        window.contentView = NSHostingView(rootView: ConnectionListView())
         startServices()
         showMainWindowWithTerminalFocus()
     }
@@ -303,7 +257,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func showMainWindowWithTerminalFocus() {
         let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
         if let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == target }) {
-            
             var terminalOnCurrentSpace = false
             let pid = terminalApp.processIdentifier
             let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
@@ -315,22 +268,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     }
                 }
             }
-            
             if terminalOnCurrentSpace {
                 self.window.makeKeyAndOrderFront(nil)
                 NSApp.activate(ignoringOtherApps: true)
             } else {
-                // Terminal is on another space. Bring it to focus to switch workspace
                 terminalApp.activate(options: [.activateIgnoringOtherApps])
-                
-                // Wait for the workspace switch to finish before showing FineTerm
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     self.window.makeKeyAndOrderFront(nil)
                     NSApp.activate(ignoringOtherApps: true)
                 }
             }
         } else {
-            // Terminal is not running, just show FineTerm immediately
             self.window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -352,8 +300,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let targetKeyChar = defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n"
             let targetModifierStr = defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command"
             
-            if let targetCode = KeyboardParser.getKeyCode(for: targetKeyChar),
-               event.keyCode == targetCode {
+            if let targetCode = KeyboardParser.getKeyCode(for: targetKeyChar), event.keyCode == targetCode {
                 let flags = event.modifierFlags
                 var modifierMatch = false
                 switch targetModifierStr {
@@ -396,7 +343,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         keyboardInterceptor?.stop()
         clipboardStore.stopMonitoring()
         terminalObserver?.stop()
-        
         SystemModifierManager.reset()
     }
     

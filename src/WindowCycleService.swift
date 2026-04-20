@@ -12,6 +12,103 @@ struct CycleWindow {
 
 struct WindowCycleService {
     
+    static var lastUsedOriginBundleID: String?
+    static var lastUsedShortcutID: UUID?
+    
+    static func handleTerminalToggle() {
+        let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+        let frontApp = getRealFrontmostApp()
+        let isTerminalFront = frontApp?.bundleIdentifier == target
+        let isFineTermFront = NSRunningApplication.current.isActive
+
+        if isTerminalFront {
+            if let originID = lastUsedOriginBundleID, originID != target, originID != Bundle.main.bundleIdentifier {
+                activateApp(bundleID: originID)
+            }
+        } else {
+            if !isFineTermFront, let app = frontApp, let bundleID = app.bundleIdentifier, bundleID != target, bundleID != Bundle.main.bundleIdentifier {
+                lastUsedOriginBundleID = bundleID
+            }
+            activateTerminal()
+        }
+    }
+
+    static func handleMainToggle() {
+        let defaults = UserDefaults.standard
+        let mainAnywhere = defaults.bool(forKey: AppConfig.Keys.globalShortcutAnywhere)
+        let secondActivation = defaults.bool(forKey: AppConfig.Keys.secondActivationToTerminal)
+        let thirdActivation = defaults.bool(forKey: AppConfig.Keys.thirdActivationToOrigin)
+        let target = defaults.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+
+        let frontApp = getRealFrontmostApp()
+        let isTerminalFront = frontApp?.bundleIdentifier == target
+        let isFineTermFront = NSRunningApplication.current.isActive
+
+        if !mainAnywhere && !isTerminalFront && !isFineTermFront { return }
+
+        if isFineTermFront {
+            if secondActivation { activateTerminal() }
+            return
+        }
+
+        if isTerminalFront {
+            if secondActivation && thirdActivation, let originID = lastUsedOriginBundleID, originID != target, originID != Bundle.main.bundleIdentifier {
+                activateApp(bundleID: originID)
+                return
+            }
+            activateFineTerm()
+            return
+        }
+
+        if !isFineTermFront && !isTerminalFront {
+            if let app = frontApp, let bundleID = app.bundleIdentifier, bundleID != Bundle.main.bundleIdentifier, bundleID != target {
+                lastUsedOriginBundleID = bundleID
+            }
+            activateFineTerm()
+        }
+    }
+    
+    static func executeCycle(isNext: Bool, isPrev: Bool, isToggle: Bool) {
+        let validShortcuts = getActivatableShortcuts()
+        if validShortcuts.isEmpty { return }
+        
+        let frontApp = getRealFrontmostApp()
+        var currentIdx = -1
+        
+        if let frontID = frontApp?.bundleIdentifier {
+            currentIdx = validShortcuts.firstIndex(where: { $0.bundleIDs.contains(frontID) }) ?? -1
+        }
+        
+        if currentIdx == -1 {
+            currentIdx = validShortcuts.firstIndex(where: { $0.id == lastUsedShortcutID }) ?? -1
+        }
+        
+        var target: CustomAppShortcut?
+        if isNext {
+            let baseIdx = currentIdx == -1 ? -1 : currentIdx
+            target = validShortcuts[(baseIdx + 1) % validShortcuts.count]
+        } else if isPrev {
+            let baseIdx = currentIdx == -1 ? 0 : currentIdx
+            target = validShortcuts[(baseIdx - 1 + validShortcuts.count) % validShortcuts.count]
+        } else if isToggle {
+            let baseIdx = currentIdx == -1 ? 0 : currentIdx
+            target = validShortcuts[baseIdx]
+        }
+        
+        if let t = target {
+            lastUsedShortcutID = t.id
+            executeCustomShortcutCycle(validBundleIDs: t.bundleIDs.filter({!$0.isEmpty}), frontApp: frontApp)
+        }
+    }
+
+    static func executeCustomShortcut(by id: UUID) {
+        if let shortcut = KeyboardCache.shared.customShortcuts.first(where: { $0.id == id && $0.isEnabled }) {
+            lastUsedShortcutID = shortcut.id
+            let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
+            executeCustomShortcutCycle(validBundleIDs: validBundleIDs, frontApp: getRealFrontmostApp())
+        }
+    }
+    
     static func activateApp(bundleID: String) {
         let workspace = NSWorkspace.shared
         guard let url = workspace.urlForApplication(withBundleIdentifier: bundleID) else { return }
@@ -52,7 +149,6 @@ struct WindowCycleService {
     static func getActivatableShortcuts() -> [CustomAppShortcut] {
         let workspace = NSWorkspace.shared
         let runningIDs = Set(workspace.runningApplications.compactMap { $0.bundleIdentifier })
-        
         let validShortcuts = KeyboardCache.shared.customShortcuts.filter { $0.isEnabled && $0.bundleIDs.contains(where: { !$0.isEmpty }) }
         
         let skipNonRunning = UserDefaults.standard.bool(forKey: AppConfig.Keys.skipNonRunningApps)
@@ -98,9 +194,7 @@ struct WindowCycleService {
         if shouldSkip {
             let runningIDs = Set(workspace.runningApplications.compactMap { $0.bundleIdentifier })
             let filtered = validBundleIDs.filter { runningIDs.contains($0) }
-            if filtered.isEmpty {
-                return
-            }
+            if filtered.isEmpty { return }
             effectiveBundleIDs = filtered
         }
         
@@ -196,7 +290,6 @@ struct WindowCycleService {
                     if let frontAppIndex = effectiveBundleIDs.firstIndex(of: currentAppBundleID) {
                         let nextAppIndex = (frontAppIndex + 1) % effectiveBundleIDs.count
                         let nextBundleID = effectiveBundleIDs[nextAppIndex]
-                        
                         if let firstWindow = cycleWindows.firstIndex(where: { $0.app.bundleIdentifier == nextBundleID }) {
                             targetIndex = firstWindow
                         } else {
@@ -211,7 +304,6 @@ struct WindowCycleService {
                 if let frontAppIndex = effectiveBundleIDs.firstIndex(of: currentAppBundleID) {
                     let nextAppIndex = (frontAppIndex + 1) % effectiveBundleIDs.count
                     let nextBundleID = effectiveBundleIDs[nextAppIndex]
-                    
                     if let firstWindow = cycleWindows.firstIndex(where: { $0.app.bundleIdentifier == nextBundleID }) {
                         targetIndex = firstWindow
                     } else {
@@ -225,7 +317,6 @@ struct WindowCycleService {
         } else if let frontAppIndex = effectiveBundleIDs.firstIndex(of: frontID) {
             let nextAppIndex = (frontAppIndex + 1) % effectiveBundleIDs.count
             let nextBundleID = effectiveBundleIDs[nextAppIndex]
-            
             if let firstWindow = cycleWindows.firstIndex(where: { $0.app.bundleIdentifier == nextBundleID }) {
                 targetIndex = firstWindow
             } else {
@@ -236,7 +327,6 @@ struct WindowCycleService {
         
         if targetIndex >= 0 && targetIndex < cycleWindows.count {
             let target = cycleWindows[targetIndex]
-            
             target.app.activate(options: .activateIgnoringOtherApps)
             let axApp = AXUIElementCreateApplication(target.app.processIdentifier)
             AXUIElementSetAttributeValue(axApp, kAXFrontmostAttribute as CFString, kCFBooleanTrue)

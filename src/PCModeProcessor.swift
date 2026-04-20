@@ -11,6 +11,11 @@ class PCModeProcessor {
     }
     
     func process(type: CGEventType, keyCode: Int64, flags: CGEventFlags, event: CGEvent, frontAppID: String) -> Bool {
+        // 1. Check if Karabiner Engine is Active. If so, let Karabiner handle the keys!
+        if UserDefaults.standard.integer(forKey: AppConfig.Keys.pcModeEngine) == 1 {
+            return false
+        }
+        
         let isDebug = UserDefaults.standard.bool(forKey: "debugMode")
         let isFlagsChanged = (type == .flagsChanged)
         let rawKeyCode = CGKeyCode(keyCode)

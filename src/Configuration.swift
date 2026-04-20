@@ -61,6 +61,7 @@ struct AppConfig {
         static let systemModifierMapCapsLock = "systemModifierMapCapsLock"
         
         static let pcModeRules = "pcModeRules"
+        static let pcModeEngine = "pcModeEngine"
         
         static let enableNextGroupShortcut = "enableNextGroupShortcut"
         static let nextGroupModifier = "nextGroupModifier"
@@ -85,7 +86,6 @@ struct AppConfig {
         CustomAppShortcut(triggers: [ShortcutTrigger(key: "i", modifier: "option")], bundleIDs: [""])
     ])) ?? Data()
     
-    // Comprehensive VM & Terminal list for standard PC bindings bypass
     static let standardExcludeList = [
        "com.apple.Terminal", "com.googlecode.iterm2", "org.tabby", "com.mitchellh.ghostty"
     ]
@@ -225,6 +225,7 @@ struct AppConfig {
         Keys.systemModifierMapCapsLock: "capslock",
         
         Keys.pcModeRules: pcModeRulesData,
+        Keys.pcModeEngine: 0,
         
         Keys.enableNextGroupShortcut: false,
         Keys.nextGroupModifier: "right control",

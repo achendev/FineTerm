@@ -4,8 +4,6 @@ import ApplicationServices
 let magicEventSourceUserData: Int64 = 0x46696E65 // "Fine"
 
 private var globalKeyboardEventTap: CFMachPort?
-private var savedOriginBundleID: String?
-private var lastUsedShortcutID: UUID?
 
 class KeyboardInterceptor {
     var eventTap: CFMachPort?
@@ -14,7 +12,6 @@ class KeyboardInterceptor {
     func start() {
         KeyboardCache.shared.start()
         
-        // 14 is NX_SYSDEFINED (System Defined Events like Media Keys)
         let eventMask = (1 << CGEventType.keyDown.rawValue) | 
                         (1 << CGEventType.keyUp.rawValue) | 
                         (1 << CGEventType.flagsChanged.rawValue) |
@@ -51,8 +48,8 @@ class KeyboardInterceptor {
         globalKeyboardEventTap = nil
         eventTap = nil
         runLoopSource = nil
-        savedOriginBundleID = nil
-        lastUsedShortcutID = nil
+        WindowCycleService.lastUsedOriginBundleID = nil
+        WindowCycleService.lastUsedShortcutID = nil
     }
 }
 
@@ -62,16 +59,14 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return Unmanaged.passUnretained(event)
     }
     
-    // Safety Net: Prevent infinite loops from our own synthesized CGEvents
     if event.getIntegerValueField(.eventSourceUserData) == magicEventSourceUserData {
         return Unmanaged.passUnretained(event)
     }
     
-    // Evaluate possible System Defined Events (Media Keys translated to F-keys)
     var effectiveType = type
     var effectiveKeyCode = event.getIntegerValueField(.keyboardEventKeycode)
     
-    if type.rawValue == 14 { // NX_SYSDEFINED
+    if type.rawValue == 14 {
         if let nsEvent = NSEvent(cgEvent: event), nsEvent.subtype.rawValue == 8 {
             let data1 = nsEvent.data1
             let mediaKeyCode = Int32((data1 & 0xFFFF0000) >> 16)
@@ -89,20 +84,15 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         }
     }
     
-    // ABORT ACTIVE TYPING: If the user physically presses any key while `typeText` is running, cancel it.
-    // CRITICAL FIX: Only abort on .keyDown. Aborting on .flagsChanged causes the macro to cancel 
-    // the moment the user lifts their finger off the trigger modifier (like Shift).
     if effectiveType == .keyDown && KeyboardEventInjector.isTypingActive {
         KeyboardEventInjector.cancelTyping()
-        return nil // Swallow the interrupting key so it doesn't bleed into the terminal
+        return nil 
     }
     
     let isKeyDownOrUp = effectiveType == .keyDown || effectiveType == .keyUp || effectiveType == .flagsChanged
     let flags = event.flags
-    
     let frontApp = WindowCycleService.getRealFrontmostApp()
     
-    // Execute PC Mode Mapping (First Priority)
     if isKeyDownOrUp {
         let frontAppID = frontApp?.bundleIdentifier ?? ""
         let wasSwallowed = PCModeProcessor.shared.process(type: effectiveType, keyCode: effectiveKeyCode, flags: flags, event: event, frontAppID: frontAppID)
@@ -111,7 +101,6 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         }
     }
     
-    // Only evaluate Global Shortcuts on purely unswallowed keyDown/flagsChanged events
     guard effectiveType == .keyDown || effectiveType == .flagsChanged else {
         return Unmanaged.passUnretained(event)
     }
@@ -132,7 +121,6 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         if !shortcut.isEnabled { continue }
         let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
         if validBundleIDs.isEmpty { continue }
-        
         if KeyboardMatcher.isAnyTriggerMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags, triggers: shortcut.triggers) {
             matchedCustomShortcut = shortcut
             break
@@ -173,117 +161,37 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     }
     
     if isNextMatch || isPrevMatch || isToggleGroupMatch {
-        let validShortcuts = WindowCycleService.getActivatableShortcuts()
-        if !validShortcuts.isEmpty {
-            var target: CustomAppShortcut?
-            var currentIdx = -1
-            
-            if let frontID = frontApp?.bundleIdentifier {
-                currentIdx = validShortcuts.firstIndex(where: { $0.bundleIDs.contains(frontID) }) ?? -1
-            }
-            
-            if currentIdx == -1 {
-                currentIdx = validShortcuts.firstIndex(where: { $0.id == lastUsedShortcutID }) ?? -1
-            }
-            
-            if isNextMatch {
-                let baseIdx = currentIdx == -1 ? -1 : currentIdx
-                let nextIdx = (baseIdx + 1) % validShortcuts.count
-                target = validShortcuts[nextIdx]
-            } else if isPrevMatch {
-                let baseIdx = currentIdx == -1 ? 0 : currentIdx
-                let prevIdx = (baseIdx - 1 + validShortcuts.count) % validShortcuts.count
-                target = validShortcuts[prevIdx]
-            } else if isToggleGroupMatch {
-                let baseIdx = currentIdx == -1 ? 0 : currentIdx
-                target = validShortcuts[baseIdx]
-            }
-            
-            if let t = target {
-                lastUsedShortcutID = t.id
-                DispatchQueue.main.async { WindowCycleService.executeCustomShortcutCycle(validBundleIDs: t.bundleIDs.filter({!$0.isEmpty}), frontApp: frontApp) }
-            }
-        }
+        DispatchQueue.main.async { WindowCycleService.executeCycle(isNext: isNextMatch, isPrev: isPrevMatch, isToggle: isToggleGroupMatch) }
         return effectiveType == .keyDown ? nil : Unmanaged.passUnretained(event)
     }
     
     if let shortcut = matchedCustomShortcut {
-        lastUsedShortcutID = shortcut.id
-        let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
-        DispatchQueue.main.async {
-            WindowCycleService.executeCustomShortcutCycle(validBundleIDs: validBundleIDs, frontApp: frontApp)
-        }
+        DispatchQueue.main.async { WindowCycleService.executeCustomShortcut(by: shortcut.id) }
         return effectiveType == .keyDown ? nil : Unmanaged.passUnretained(event)
     }
     
     if isLibraryAddMatch {
-        DispatchQueue.main.async {
-            if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.showLibraryAddWindow() }
-        }
+        DispatchQueue.main.async { if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.showLibraryAddWindow() } }
         return nil
     }
 
     if isLibraryOpenMatch {
-        DispatchQueue.main.async {
-            if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.toggleLibraryWindow() }
-        }
+        DispatchQueue.main.async { if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.toggleLibraryWindow() } }
         return nil
     }
-
-    let target = defaults.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
-    let isTerminalFront = frontApp?.bundleIdentifier == target
-    let isFineTermFront = NSRunningApplication.current.isActive
     
     if isMainMatch {
-        let mainAnywhere = defaults.bool(forKey: AppConfig.Keys.globalShortcutAnywhere)
-        let secondActivation = defaults.bool(forKey: AppConfig.Keys.secondActivationToTerminal)
-        let thirdActivation = defaults.bool(forKey: AppConfig.Keys.thirdActivationToOrigin)
-        
-        if !mainAnywhere && !isTerminalFront && !isFineTermFront { return Unmanaged.passUnretained(event) }
-        
-        if isFineTermFront {
-            if secondActivation { WindowCycleService.activateTerminal(); return nil }
-            return Unmanaged.passUnretained(event)
-        }
-        
-        if isTerminalFront {
-            if secondActivation && thirdActivation, let originID = savedOriginBundleID, originID != target, originID != Bundle.main.bundleIdentifier {
-                DispatchQueue.main.async { WindowCycleService.activateApp(bundleID: originID) }
-                return nil
-            }
-            WindowCycleService.activateFineTerm()
-            return nil
-        }
-        
-        if !isFineTermFront && !isTerminalFront {
-            if let app = frontApp, let bundleID = app.bundleIdentifier, bundleID != Bundle.main.bundleIdentifier, bundleID != target {
-                savedOriginBundleID = bundleID
-            }
-            WindowCycleService.activateFineTerm()
-            return nil
-        }
+        DispatchQueue.main.async { WindowCycleService.handleMainToggle() }
+        return nil
     }
     
     if isToggleMatch {
-        if isTerminalFront {
-            if let originID = savedOriginBundleID, originID != target, originID != Bundle.main.bundleIdentifier {
-                DispatchQueue.main.async { WindowCycleService.activateApp(bundleID: originID) }
-                return nil
-            }
-            return Unmanaged.passUnretained(event)
-        } else {
-            if !isFineTermFront, let app = frontApp, let bundleID = app.bundleIdentifier, bundleID != target, bundleID != Bundle.main.bundleIdentifier {
-                savedOriginBundleID = bundleID
-            }
-            WindowCycleService.activateTerminal()
-            return nil
-        }
+        DispatchQueue.main.async { WindowCycleService.handleTerminalToggle() }
+        return nil
     }
     
     if isClipMatch {
-        DispatchQueue.main.async {
-            if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.toggleClipboardWindow() }
-        }
+        DispatchQueue.main.async { if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.toggleClipboardWindow() } }
         return nil
     }
     

@@ -132,6 +132,7 @@ struct ModifiersPickerView: View {
 
 struct PCModeSettingsTab: View {
     @AppStorage(AppConfig.Keys.pcModeRules) private var pcModeRulesData: Data = AppConfig.pcModeRulesData
+    @AppStorage(AppConfig.Keys.pcModeEngine) private var pcModeEngine = 0
     
     @AppStorage(AppConfig.Keys.systemModifierSwapEnabled) private var systemModifierSwapEnabled = false
     @AppStorage(AppConfig.Keys.systemModifierMapFn) private var mapFn = "control"
@@ -220,6 +221,25 @@ struct PCModeSettingsTab: View {
                         .font(.caption).foregroundColor(.secondary)
                 }
                 
+                HStack(spacing: 12) {
+                    Text("Engine:")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        
+                    Picker("", selection: $pcModeEngine) {
+                        Text("Internal (Fastest)").tag(0)
+                        Text("Karabiner (Full)").tag(1)
+                        Text("Hybrid (Internal + Karabiner Fallback)").tag(2)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(SegmentedPickerStyle())
+                    .frame(width: 400)
+                    .onChange(of: pcModeEngine) { _ in syncEngine(); updateModifiers() }
+                    
+                    Spacer()
+                }
+                .padding(.vertical, 6)
+                
                 HStack {
                     Button("Enable All") {
                         for i in 0..<rules.count { rules[i].isEnabled = true }
@@ -272,8 +292,24 @@ struct PCModeSettingsTab: View {
         }
     }
     
+    private func syncEngine() {
+        if pcModeEngine == 1 {
+            KarabinerExporter.sync(rules: rules, isHybrid: false)
+        } else if pcModeEngine == 2 {
+            KarabinerExporter.sync(rules: rules, isHybrid: true)
+            // Ensure SecureInputMonitor pushes the immediate state
+            NotificationCenter.default.post(name: NSNotification.Name("ForceSecureInputSync"), object: nil)
+        } else {
+            KarabinerExporter.clear()
+        }
+    }
+    
     private func updateModifiers() {
         SystemModifierManager.applyCurrentSettings()
+        // Ensure Karabiner gets updated system modifiers if it's running
+        if pcModeEngine > 0 {
+            syncEngine()
+        }
     }
     
     private func load() {
@@ -290,6 +326,12 @@ struct PCModeSettingsTab: View {
             if let encoded = try? JSONEncoder().encode(currentRules) {
                 DispatchQueue.main.async {
                     self.pcModeRulesData = encoded
+                    // Immediately sync with Karabiner if a mode is active
+                    if self.pcModeEngine == 1 {
+                        KarabinerExporter.sync(rules: currentRules, isHybrid: false)
+                    } else if self.pcModeEngine == 2 {
+                        KarabinerExporter.sync(rules: currentRules, isHybrid: true)
+                    }
                 }
             }
         }

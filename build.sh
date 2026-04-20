@@ -101,14 +101,24 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <true/>
     <key>NSAppleEventsUsageDescription</key>
     <string>This app needs to control Terminal to open tabs and run commands.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>FineTerm Action</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>fineterm</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST
 
 # --- 6. Sign Code ---
 echo "▶ Signing..."
-# Use Apple Development certificate for consistent signing (accessibility permissions persist across rebuilds)
-# Find the first available Apple Development identity (use SHA-1 hash to avoid ambiguity)
+# Find the first available Apple Development identity
 SIGN_HASH=$(security find-identity -v -p codesigning 2>/dev/null | grep "Apple Development" | head -1 | awk '{print $2}')
 
 if [ -n "$SIGN_HASH" ]; then

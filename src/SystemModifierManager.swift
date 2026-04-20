@@ -15,7 +15,12 @@ struct SystemModifierManager {
     
     static func applyCurrentSettings() {
         let enabled = UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled)
-        if !enabled {
+        let engine = UserDefaults.standard.integer(forKey: AppConfig.Keys.pcModeEngine)
+        
+        // CRITICAL FIX: If Karabiner is active (Engine 1 or 2), we MUST clear hidutil.
+        // Karabiner is already handling the system modifier swaps via karabiner.json.
+        // If we leave hidutil active, the modifiers get swapped twice, ruining App Switches and PC Mode rules.
+        if !enabled || engine > 0 {
             reset()
             return
         }

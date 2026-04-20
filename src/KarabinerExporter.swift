@@ -31,16 +31,7 @@ struct KarabinerExporter {
             }
         }
 
-        // 2. Export System Modifier Swaps
-        let systemManipulators = getSystemModifierManipulators()
-        if !systemManipulators.isEmpty {
-            newRules.append([
-                "description": "FineTerm: System Modifier Swaps",
-                "manipulators": systemManipulators
-            ])
-        }
-
-        // 3. Export Global Shortcuts (UDP commands)
+        // 2. Export Global Shortcuts (UDP commands)
         let globalManipulators = getGlobalShortcutManipulators()
         if !globalManipulators.isEmpty {
             newRules.append([
@@ -49,20 +40,22 @@ struct KarabinerExporter {
             ])
         }
 
+        // 3. Export System Modifier Swaps (As Simple Modifications)
+        let systemSimpleMods = getSystemSimpleModifications()
+
+        // Find Target Profile
         var targetProfileIndex = 0
-        var profileUpdated = false
         for i in 0..<profiles.count {
             if let selected = profiles[i]["selected"] as? Bool, selected {
                 targetProfileIndex = i
-                profileUpdated = true
                 break
             }
         }
 
+        // --- UPDATE COMPLEX MODIFICATIONS ---
         var complexMods = profiles[targetProfileIndex]["complex_modifications"] as? [String: Any] ?? ["rules": []]
         var existingRules = complexMods["rules"] as? [[String: Any]] ?? []
 
-        // CLEAN EXISTING FINETERM RULES (Fix duplication bug)
         existingRules = existingRules.filter { rule in
             if let desc = rule["description"] as? String {
                 return !desc.hasPrefix("FineTerm:")
@@ -70,18 +63,28 @@ struct KarabinerExporter {
             return true
         }
 
-        // APPEND NEW RULES
         existingRules.append(contentsOf: newRules)
-        
-        // SAVE
         complexMods["rules"] = existingRules
         profiles[targetProfileIndex]["complex_modifications"] = complexMods
+
+        // --- UPDATE SIMPLE MODIFICATIONS ---
+        var existingSimpleMods = profiles[targetProfileIndex]["simple_modifications"] as? [[String: Any]] ?? []
+        
+        // Remove old FineTerm simple modifications using our hidden marker
+        existingSimpleMods = existingSimpleMods.filter { mod in
+            return mod["__fineterm"] == nil
+        }
+        
+        existingSimpleMods.append(contentsOf: systemSimpleMods)
+        profiles[targetProfileIndex]["simple_modifications"] = existingSimpleMods
+
+        // SAVE
         json["profiles"] = profiles
 
         if let newData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) {
             try? newData.write(to: URL(fileURLWithPath: filePath))
             if UserDefaults.standard.bool(forKey: "debugMode") {
-                print("DEBUG: [KarabinerExporter] Successfully synced \(newRules.count) block rules to Karabiner.")
+                print("DEBUG: [KarabinerExporter] Successfully synced \(newRules.count) block rules and \(systemSimpleMods.count) simple modifications to Karabiner.")
             }
         }
     }
@@ -96,6 +99,8 @@ struct KarabinerExporter {
 
         var modified = false
         for i in 0..<profiles.count {
+            
+            // Clean Complex Modifications
             if var complexMods = profiles[i]["complex_modifications"] as? [String: Any],
                let existingRules = complexMods["rules"] as? [[String: Any]] {
 
@@ -109,6 +114,18 @@ struct KarabinerExporter {
                 if filtered.count != existingRules.count {
                     complexMods["rules"] = filtered
                     profiles[i]["complex_modifications"] = complexMods
+                    modified = true
+                }
+            }
+            
+            // Clean Simple Modifications
+            if let existingSimpleMods = profiles[i]["simple_modifications"] as? [[String: Any]] {
+                let filtered = existingSimpleMods.filter { mod in
+                    return mod["__fineterm"] == nil
+                }
+                
+                if filtered.count != existingSimpleMods.count {
+                    profiles[i]["simple_modifications"] = filtered
                     modified = true
                 }
             }
@@ -178,7 +195,7 @@ struct KarabinerExporter {
         return manipulators
     }
 
-    static func loadGroupTriggers(data: Data?, mod1Key: String, mod2Key: String, keyKey: String, defKey: String) -> [ShortcutTrigger] {
+    static func loadGroupTriggers(data: Data?, mod1Key: String, mod2Key: String, keyKey: String, defKey: String) ->[ShortcutTrigger] {
         if let d = data, let decoded = try? JSONDecoder().decode([ShortcutTrigger].self, from: d), !decoded.isEmpty {
             return decoded
         }
@@ -243,9 +260,9 @@ struct KarabinerExporter {
     }
 
     // MARK: - System Modifier Swaps
-    static func getSystemModifierManipulators() -> [[String: Any]] {
-        guard UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) else { return[] }
-        var manipulators: [[String: Any]] = []
+    static func getSystemSimpleModifications() -> [[String: Any]] {
+        guard UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) else { return [] }
+        var simpleMods: [[String: Any]] = []
 
         let mapFn = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapFn) ?? "control"
         let mapCtrl = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapCtrl) ?? "globe"
@@ -261,7 +278,7 @@ struct KarabinerExporter {
             return "left_\(base)"
         }
 
-        func makeManipulator(from: String, to: String) ->[String: Any]? {
+        func makeSimpleMod(from: String, to: String) -> [String: Any]? {
             var toKey = to == "globe" ? "fn" : to
             switch toKey {
             case "control": toKey = "left_control"
@@ -273,23 +290,24 @@ struct KarabinerExporter {
             
             let fromKey = from == "globe" ? "fn" : from
             if fromKey == toKey { return nil }
-            return[
-                "type": "basic",
-                "from": ["key_code": fromKey, "modifiers": ["optional": ["any"]]],
-                "to": [["key_code": toKey]]
+            
+            return [
+                "from": ["key_code": fromKey],
+                "to": [["key_code": toKey]],
+                "__fineterm": true
             ]
         }
 
-        if let m = makeManipulator(from: "fn", to: resolveToKey(base: mapFn, side: nil)) { manipulators.append(m) }
-        if let m = makeManipulator(from: "left_control", to: resolveToKey(base: mapCtrl, side: "left")) { manipulators.append(m) }
-        if let m = makeManipulator(from: "right_control", to: resolveToKey(base: mapCtrl, side: "right")) { manipulators.append(m) }
-        if let m = makeManipulator(from: "left_option", to: resolveToKey(base: mapOpt, side: "left")) { manipulators.append(m) }
-        if let m = makeManipulator(from: "right_option", to: resolveToKey(base: mapOpt, side: "right")) { manipulators.append(m) }
-        if let m = makeManipulator(from: "left_command", to: resolveToKey(base: mapCmd, side: "left")) { manipulators.append(m) }
-        if let m = makeManipulator(from: "right_command", to: resolveToKey(base: mapCmd, side: "right")) { manipulators.append(m) }
-        if let m = makeManipulator(from: "caps_lock", to: resolveToKey(base: mapCaps, side: nil)) { manipulators.append(m) }
+        if let m = makeSimpleMod(from: "fn", to: resolveToKey(base: mapFn, side: nil)) { simpleMods.append(m) }
+        if let m = makeSimpleMod(from: "left_control", to: resolveToKey(base: mapCtrl, side: "left")) { simpleMods.append(m) }
+        if let m = makeSimpleMod(from: "right_control", to: resolveToKey(base: mapCtrl, side: "right")) { simpleMods.append(m) }
+        if let m = makeSimpleMod(from: "left_option", to: resolveToKey(base: mapOpt, side: "left")) { simpleMods.append(m) }
+        if let m = makeSimpleMod(from: "right_option", to: resolveToKey(base: mapOpt, side: "right")) { simpleMods.append(m) }
+        if let m = makeSimpleMod(from: "left_command", to: resolveToKey(base: mapCmd, side: "left")) { simpleMods.append(m) }
+        if let m = makeSimpleMod(from: "right_command", to: resolveToKey(base: mapCmd, side: "right")) { simpleMods.append(m) }
+        if let m = makeSimpleMod(from: "caps_lock", to: resolveToKey(base: mapCaps, side: nil)) { simpleMods.append(m) }
 
-        return manipulators
+        return simpleMods
     }
 
     // MARK: - Internal Mapping Logic
@@ -298,100 +316,86 @@ struct KarabinerExporter {
         let fromParts = parse(map.from)
         guard let fromKey = fromParts.key else { return[] }
         
-        var keysToMap = [fromKey]
-        
-        // CRITICAL FIX: Karabiner does not naturally chain complex modifications.
-        // If a user maps CapsLock -> F20 in System Modifiers, and creates a rule for F20,
-        // we must automatically duplicate the rule to trigger on physical CapsLock directly.
-        if UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) {
-            let mapCaps = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapCapsLock) ?? "capslock"
-            if fromKey == mapCaps && mapCaps != "capslock" {
-                keysToMap.append("caps_lock")
-            }
-        }
-
         var manipulators: [[String: Any]] = []
 
-        for key in keysToMap {
-            var fromDict: [String: Any] = [:]
-            applyKey(key, to: &fromDict)
+        var fromDict: [String: Any] = [:]
+        applyKey(fromKey, to: &fromDict)
 
-            if !fromParts.modifiers.isEmpty {
-                fromDict["modifiers"] = ["mandatory": fromParts.modifiers, "optional": ["any"]]
-            } else {
-                fromDict["modifiers"] = ["optional": ["any"]]
-            }
-
-            var toArray: [[String: Any]] = []
-
-            if map.to.hasPrefix("shell:") {
-                let cmd = map.to.dropFirst(6).trimmingCharacters(in: .whitespaces)
-                toArray.append(["shell_command": cmd])
-            } else if map.to.hasPrefix("func:") {
-                let f = map.to.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                if let t = mapFunc(f) { toArray.append(t) }
-            } else if map.to.hasPrefix("type:") {
-                let t = map.to.dropFirst(5)
-                let text = t.hasPrefix(" ") ? String(t.dropFirst()) : String(t)
-                let escaped = text.replacingOccurrences(of: "'", with: "'\\''")
-                toArray.append(["shell_command": "osascript -e 'tell application \"System Events\" to keystroke \"\(escaped)\"'"])
-            } else {
-                let parts = map.to.components(separatedBy: ",")
-                for part in parts {
-                    let toParts = parse(part)
-                    if let k = toParts.key {
-                        var tDict: [String: Any] = [:]
-                        applyKey(k, to: &tDict)
-                        
-                        var outMods = toParts.modifiers
-                        
-                        // FIX: Inject 'fn' for F-Keys and Nav Keys to mimic internal engine perfectly
-                        let mappedK = mapKeyString(k)
-                        let fnKeys: Set<String> = [
-                            "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12", 
-                            "f13", "f14", "f15", "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23", "f24",
-                            "home", "end", "page_up", "page_down", "left_arrow", "right_arrow", "up_arrow", "down_arrow",
-                            "insert", "delete_forward"
-                        ]
-                        
-                        if fnKeys.contains(mappedK) && !outMods.contains("fn") {
-                            outMods.append("fn")
-                        }
-                        
-                        if !outMods.isEmpty {
-                            tDict["modifiers"] = outMods
-                        }
-                        toArray.append(tDict)
-                    }
-                }
-            }
-
-            guard !toArray.isEmpty else { continue }
-
-            var manipulator: [String: Any] = [
-                "type": "basic",
-                "from": fromDict,
-                "to": toArray
-            ]
-
-            var conditions: [[String: Any]] = []
-
-            if appFilterMode != .none && !bundleIDs.isEmpty {
-                let validIDs = bundleIDs.filter { !$0.isEmpty }.map { "^" + $0.replacingOccurrences(of: ".", with: "\\.") + "$" }
-                if !validIDs.isEmpty {
-                    conditions.append([
-                        "type": appFilterMode == .include ? "frontmost_application_if" : "frontmost_application_unless",
-                        "bundle_identifiers": validIDs
-                    ])
-                }
-            }
-            
-            if !conditions.isEmpty {
-                manipulator["conditions"] = conditions
-            }
-            
-            manipulators.append(manipulator)
+        if !fromParts.modifiers.isEmpty {
+            fromDict["modifiers"] = ["mandatory": fromParts.modifiers, "optional": ["any"]]
+        } else {
+            fromDict["modifiers"] = ["optional": ["any"]]
         }
+
+        var toArray: [[String: Any]] = []
+
+        if map.to.hasPrefix("shell:") {
+            let cmd = map.to.dropFirst(6).trimmingCharacters(in: .whitespaces)
+            toArray.append(["shell_command": cmd])
+        } else if map.to.hasPrefix("func:") {
+            let f = map.to.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            if let t = mapFunc(f) { toArray.append(t) }
+        } else if map.to.hasPrefix("type:") {
+            let t = map.to.dropFirst(5)
+            let text = t.hasPrefix(" ") ? String(t.dropFirst()) : String(t)
+            let escaped = text.replacingOccurrences(of: "'", with: "'\\''")
+            toArray.append(["shell_command": "osascript -e 'tell application \"System Events\" to keystroke \"\(escaped)\"'"])
+        } else {
+            let parts = map.to.components(separatedBy: ",")
+            for part in parts {
+                let toParts = parse(part)
+                if let k = toParts.key {
+                    var tDict: [String: Any] = [:]
+                    applyKey(k, to: &tDict)
+                    
+                    var outMods = toParts.modifiers
+                    
+                    // Inject 'fn' for F-Keys and Nav Keys to mimic internal engine perfectly
+                    let mappedK = mapKeyString(k)
+                    let fnKeys: Set<String> = [
+                        "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12", 
+                        "f13", "f14", "f15", "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23", "f24",
+                        "home", "end", "page_up", "page_down", "left_arrow", "right_arrow", "up_arrow", "down_arrow",
+                        "insert", "delete_forward"
+                    ]
+                    
+                    if fnKeys.contains(mappedK) && !outMods.contains("fn") {
+                        outMods.append("fn")
+                    }
+                    
+                    if !outMods.isEmpty {
+                        tDict["modifiers"] = outMods
+                    }
+                    toArray.append(tDict)
+                }
+            }
+        }
+
+        guard !toArray.isEmpty else { return [] }
+
+        var manipulator: [String: Any] = [
+            "type": "basic",
+            "from": fromDict,
+            "to": toArray
+        ]
+
+        var conditions: [[String: Any]] = []
+
+        if appFilterMode != .none && !bundleIDs.isEmpty {
+            let validIDs = bundleIDs.filter { !$0.isEmpty }.map { "^" + $0.replacingOccurrences(of: ".", with: "\\.") + "$" }
+            if !validIDs.isEmpty {
+                conditions.append([
+                    "type": appFilterMode == .include ? "frontmost_application_if" : "frontmost_application_unless",
+                    "bundle_identifiers": validIDs
+                ])
+            }
+        }
+        
+        if !conditions.isEmpty {
+            manipulator["conditions"] = conditions
+        }
+        
+        manipulators.append(manipulator)
         
         return manipulators
     }
@@ -402,7 +406,7 @@ struct KarabinerExporter {
         case "button1", "left_click": dict["pointing_button"] = "button1"
         case "button2", "right_click": dict["pointing_button"] = "button2"
         case "button3", "middle_click": dict["pointing_button"] = "button3"
-        // FIX: Ensure media keys map to `consumer_key_code` instead of `key_code` in Karabiner
+        // Ensure media keys map to `consumer_key_code` instead of `key_code` in Karabiner
         case "volume_increment", "volume_decrement", "mute", "play_or_pause", "fastforward", "rewind", "display_brightness_increment", "display_brightness_decrement", "illumination_increment", "illumination_decrement":
             dict["consumer_key_code"] = mapped
         case "vol_up": dict["consumer_key_code"] = "volume_increment"

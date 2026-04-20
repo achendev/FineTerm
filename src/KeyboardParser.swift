@@ -25,7 +25,6 @@ struct KeyboardParser {
         "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
         "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
         "f13": 105, "f14": 107, "f15": 113, "f16": 106, "f17": 64, "f18": 79, "f19": 80, "f20": 90,
-        // Aliasing F21-F24 to F17-F20 as safety nets since macOS drops actual F21-F24 HID events
         "f21": 64, "f22": 79, "f23": 80, "f24": 90,
         "hyphen": 27, "equal_sign": 24, "slash": 44, "backslash": 42,
         "left_shift": 56, "right_shift": 60, "left_control": 59, "right_control": 62,
@@ -34,8 +33,6 @@ struct KeyboardParser {
         "lopt": 58, "ropt": 61, "lcmd": 55, "rcmd": 54,
         "alt": 58, "lalt": 58, "ralt": 61,
         "cmd": 55, "ctrl": 59, "shift": 56,
-        
-        // Virtual KeyCodes for system media keys
         "volume_increment": 1000, "vol_up": 1000,
         "volume_decrement": 1001, "vol_down": 1001,
         "display_brightness_increment": 1002, "brightness_up": 1002,
@@ -46,18 +43,53 @@ struct KeyboardParser {
         "prev_track": 1018,
         "illumination_increment": 1021, "kbd_brightness_up": 1021,
         "illumination_decrement": 1022, "kbd_brightness_down": 1022,
-        
-        // Virtual KeyCodes for Mouse Buttons
         "button1": 2001, "left_click": 2001,
         "button2": 2002, "right_click": 2002,
-        "button3": 2003, "middle_click": 2003
+        "button3": 2003, "middle_click": 2003,
+        ",": 43, "comma": 43,
+        ".": 47, "period": 47,
+        ";": 41, "semicolon": 41,
+        "'": 39, "quote": 39,
+        "[": 33, "open_bracket": 33,
+        "]": 30, "close_bracket": 30,
+        "`": 50, "grave_accent_and_tilde": 50
     ]
+    
+    // Custom split function that prevents commas from splitting if they are used as a key
+    static func splitActions(_ input: String) -> [String] {
+        var actions: [String] = []
+        var currentAction = ""
+        var expectsKey = true
+
+        for char in input {
+            if char == " " {
+                currentAction.append(char)
+                continue
+            }
+            if char == "+" {
+                expectsKey = true
+                currentAction.append(char)
+                continue
+            }
+            if char == "," && !expectsKey {
+                // Valid separator
+                actions.append(currentAction)
+                currentAction = ""
+                expectsKey = true
+                continue
+            }
+            
+            expectsKey = false
+            currentAction.append(char)
+        }
+        if !currentAction.isEmpty {
+            actions.append(currentAction)
+        }
+        return actions.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
 
     static func getKeyCode(for char: String) -> CGKeyCode? {
-        let lower = char.lowercased()
-                        .components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet.punctuationCharacters).inverted)
-                        .joined()
-                        .trimmingCharacters(in: .whitespaces)
+        let lower = char.lowercased().trimmingCharacters(in: .whitespaces)
                         
         if let code = specialKeyCodes[lower] { return code }
         
@@ -78,15 +110,15 @@ struct KeyboardParser {
     static func parseKeyString(_ input: String) -> (coreFlags: CGEventFlags, strictFlags: [String], key: String) {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.lowercased().hasPrefix("shell:") {
-            return ([], [], trimmed)
+            return ([],[], trimmed)
         }
         
         let rawParts = input.components(separatedBy: "+")
         let parts = rawParts.map { 
-            $0.components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet.punctuationCharacters).inverted).joined().lowercased() 
+            $0.trimmingCharacters(in: .whitespaces).lowercased() 
         }.filter { !$0.isEmpty }
         
-        guard !parts.isEmpty else { return ([], [], "") }
+        guard !parts.isEmpty else { return ([],[], "") }
         
         var coreFlags: CGEventFlags = []
         var strictFlags: [String] = []

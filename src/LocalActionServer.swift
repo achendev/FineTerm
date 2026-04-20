@@ -32,7 +32,6 @@ class LocalActionServer {
             if let data = data, let message = String(data: data, encoding: .utf8) {
                 self.handleMessage(message)
             }
-            // Close the connection immediately after receiving the packet
             connection.cancel()
         }
     }
@@ -50,10 +49,20 @@ class LocalActionServer {
             case "fineterm/library-open": if let d = NSApp.delegate as? AppDelegate { d.toggleLibraryWindow() }
             case "fineterm/terminal-toggle": WindowCycleService.handleTerminalToggle()
             case "fineterm/main-toggle": WindowCycleService.handleMainToggle()
+            case "fineterm/type-clipboard":
+                if let string = NSPasteboard.general.string(forType: .string) {
+                    // Set a brisk 10ms delay for smooth typing via fast macro server
+                    KeyboardEventInjector.typeText(string, delayMs: 10)
+                }
             default:
                 if msg.hasPrefix("fineterm/custom-shortcut?id=") {
                     let idStr = msg.replacingOccurrences(of: "fineterm/custom-shortcut?id=", with: "")
                     if let id = UUID(uuidString: idStr) { WindowCycleService.executeCustomShortcut(by: id) }
+                } else if msg.hasPrefix("fineterm/type-text?b64=") {
+                    let b64 = msg.replacingOccurrences(of: "fineterm/type-text?b64=", with: "")
+                    if let data = Data(base64Encoded: b64), let text = String(data: data, encoding: .utf8) {
+                        KeyboardEventInjector.typeText(text, delayMs: 10)
+                    }
                 }
             }
         }

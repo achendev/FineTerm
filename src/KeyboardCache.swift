@@ -81,7 +81,8 @@ class KeyboardCache {
                             let text = String(map.to[cmdStartIndex...])
                             typeText = text.hasPrefix(" ") ? String(text.dropFirst()) : text
                         } else {
-                            let parts = map.to.components(separatedBy: ",")
+                            // FIX: Using custom safe split function instead of simple .components(separatedBy: ",")
+                            let parts = KeyboardParser.splitActions(map.to)
                             for part in parts {
                                 let toParsed = KeyboardParser.parseKeyString(part)
                                 guard !toParsed.key.isEmpty else { continue }

@@ -70,7 +70,6 @@ struct KarabinerExporter {
         // --- UPDATE SIMPLE MODIFICATIONS ---
         var existingSimpleMods = profiles[targetProfileIndex]["simple_modifications"] as? [[String: Any]] ?? []
         
-        // Remove old FineTerm simple modifications using our hidden marker
         existingSimpleMods = existingSimpleMods.filter { mod in
             return mod["__fineterm"] == nil
         }
@@ -100,7 +99,6 @@ struct KarabinerExporter {
         var modified = false
         for i in 0..<profiles.count {
             
-            // Clean Complex Modifications
             if var complexMods = profiles[i]["complex_modifications"] as? [String: Any],
                let existingRules = complexMods["rules"] as? [[String: Any]] {
 
@@ -118,7 +116,6 @@ struct KarabinerExporter {
                 }
             }
             
-            // Clean Simple Modifications
             if let existingSimpleMods = profiles[i]["simple_modifications"] as? [[String: Any]] {
                 let filtered = existingSimpleMods.filter { mod in
                     return mod["__fineterm"] == nil
@@ -261,7 +258,7 @@ struct KarabinerExporter {
 
     // MARK: - System Modifier Swaps
     static func getSystemSimpleModifications() -> [[String: Any]] {
-        guard UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) else { return [] }
+        guard UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) else { return[] }
         var simpleMods: [[String: Any]] = []
 
         let mapFn = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapFn) ?? "control"
@@ -334,14 +331,20 @@ struct KarabinerExporter {
             toArray.append(["shell_command": cmd])
         } else if map.to.hasPrefix("func:") {
             let f = map.to.dropFirst(5).trimmingCharacters(in: .whitespaces)
-            if let t = mapFunc(f) { toArray.append(t) }
+            if f == "type_clipboard" {
+                toArray.append(["shell_command": "/bin/bash -c \"echo -n 'fineterm/type-clipboard' > /dev/udp/127.0.0.1/61234\""])
+            } else if let t = mapFunc(f) {
+                toArray.append(t)
+            }
         } else if map.to.hasPrefix("type:") {
             let t = map.to.dropFirst(5)
             let text = t.hasPrefix(" ") ? String(t.dropFirst()) : String(t)
-            let escaped = text.replacingOccurrences(of: "'", with: "'\\''")
-            toArray.append(["shell_command": "osascript -e 'tell application \"System Events\" to keystroke \"\(escaped)\"'"])
+            if let base64 = text.data(using: .utf8)?.base64EncodedString() {
+                toArray.append(["shell_command": "/bin/bash -c \"echo -n 'fineterm/type-text?b64=\(base64)' > /dev/udp/127.0.0.1/61234\""])
+            }
         } else {
-            let parts = map.to.components(separatedBy: ",")
+            // FIX: Using Custom Split to prevent comma key mapping bugs
+            let parts = KeyboardParser.splitActions(map.to)
             for part in parts {
                 let toParts = parse(part)
                 if let k = toParts.key {
@@ -350,7 +353,6 @@ struct KarabinerExporter {
                     
                     var outMods = toParts.modifiers
                     
-                    // Inject 'fn' for F-Keys and Nav Keys to mimic internal engine perfectly
                     let mappedK = mapKeyString(k)
                     let fnKeys: Set<String> = [
                         "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12", 
@@ -371,7 +373,7 @@ struct KarabinerExporter {
             }
         }
 
-        guard !toArray.isEmpty else { return [] }
+        guard !toArray.isEmpty else { return[] }
 
         var manipulator: [String: Any] = [
             "type": "basic",
@@ -406,7 +408,6 @@ struct KarabinerExporter {
         case "button1", "left_click": dict["pointing_button"] = "button1"
         case "button2", "right_click": dict["pointing_button"] = "button2"
         case "button3", "middle_click": dict["pointing_button"] = "button3"
-        // Ensure media keys map to `consumer_key_code` instead of `key_code` in Karabiner
         case "volume_increment", "volume_decrement", "mute", "play_or_pause", "fastforward", "rewind", "display_brightness_increment", "display_brightness_decrement", "illumination_increment", "illumination_decrement":
             dict["consumer_key_code"] = mapped
         case "vol_up": dict["consumer_key_code"] = "volume_increment"
@@ -450,6 +451,17 @@ struct KarabinerExporter {
 
     static func mapKeyString(_ k: String) -> String {
         switch k {
+        case ",", "comma": return "comma"
+        case ".", "period": return "period"
+        case ";", "semicolon": return "semicolon"
+        case "'", "quote": return "quote"
+        case "[", "open_bracket": return "open_bracket"
+        case "]", "close_bracket": return "close_bracket"
+        case "`", "grave_accent_and_tilde": return "grave_accent_and_tilde"
+        case "\\", "backslash": return "backslash"
+        case "-": return "hyphen"
+        case "=": return "equal_sign"
+        case "/": return "slash"
         case "delete_or_backspace": return "delete_or_backspace"
         case "delete_forward": return "delete_forward"
         case "return", "enter": return "return_or_enter"
@@ -460,10 +472,6 @@ struct KarabinerExporter {
         case "down_arrow": return "down_arrow"
         case "space", "spacebar": return "spacebar"
         case "capslock", "caps_lock": return "caps_lock"
-        case "hyphen": return "hyphen"
-        case "equal_sign": return "equal_sign"
-        case "slash": return "slash"
-        case "backslash": return "backslash"
         case "page_up": return "page_up"
         case "page_down": return "page_down"
         case "home": return "home"

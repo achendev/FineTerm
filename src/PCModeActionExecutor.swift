@@ -29,7 +29,7 @@ struct PCModeActionExecutor {
         if map.isType {
             if isPress {
                 if let text = map.typeText {
-                    KeyboardEventInjector.typeText(text, delayMs: 50)
+                    KeyboardEventInjector.typeText(text, delayMs: 10)
                 }
                 PCModeProcessor.shared.activeRemaps[rawKeyCode] = (keyCode: 0, flags: [])
             }
@@ -46,7 +46,6 @@ struct PCModeActionExecutor {
         
         let action = map.toActions[0]
         
-        // Reconstruct cleanEventFlags to prevent modifier leaking on modifier-only triggers
         var cleanEventFlags = originalFlags
         if isFlagsChanged {
             switch rawKeyCode {
@@ -78,7 +77,7 @@ struct PCModeActionExecutor {
             case 59, 62: return originalFlags.contains(.maskControl)
             case 58, 61: return originalFlags.contains(.maskAlternate)
             case 55, 54: return originalFlags.contains(.maskCommand)
-            case 57: return true // CapsLock toggle triggers full press
+            case 57: return true
             default: return false
             }
         }
@@ -101,7 +100,7 @@ struct PCModeActionExecutor {
         case "find": KeyboardEventInjector.injectInstantMacro(keyCode: 3, flags: .maskCommand)
         case "type_clipboard":
             if let string = NSPasteboard.general.string(forType: .string) {
-                KeyboardEventInjector.typeText(string, delayMs: 50)
+                KeyboardEventInjector.typeText(string, delayMs: 10)
             }
         default: break
         }
@@ -190,7 +189,7 @@ struct PCModeActionExecutor {
                         down.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
                         down.post(tap: .cghidEventTap)
                     }
-                    if rawKeyCode == 57 { // CapsLock special handling
+                    if rawKeyCode == 57 {
                         PCModeProcessor.shared.activeRemaps.removeValue(forKey: rawKeyCode)
                         if let up = CGEvent(keyboardEventSource: source, virtualKey: action.keyCode, keyDown: false) {
                             up.flags = augmentedFlags

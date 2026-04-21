@@ -25,6 +25,11 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
         return Unmanaged.passUnretained(event)
     }
     
+    // Trigger an immediate secure input check on any mouse click (to catch clicking into password fields)
+    if type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown {
+        SecureInputMonitor.shared.triggerActiveCheck()
+    }
+    
     let frontApp = NSWorkspace.shared.frontmostApplication
     let frontAppID = frontApp?.bundleIdentifier ?? ""
     

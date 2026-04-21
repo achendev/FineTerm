@@ -11,10 +11,10 @@ class PCModeProcessor {
     }
     
     func process(type: CGEventType, keyCode: Int64, flags: CGEventFlags, event: CGEvent, frontAppID: String) -> Bool {
-        // 1. Check if Karabiner Engine is Active. If so, let Karabiner handle the keys!
-        if UserDefaults.standard.integer(forKey: AppConfig.Keys.pcModeEngine) == 1 {
-            return false
-        }
+        // 1. Check if Engine disables Internal Processing
+        let engine = UserDefaults.standard.integer(forKey: AppConfig.Keys.pcModeEngine)
+        if engine == 1 { return false }
+        if engine == 2 && SecureInputMonitor.shared.isSecureInputEnabled { return false }
         
         let isDebug = UserDefaults.standard.bool(forKey: "debugMode")
         let isFlagsChanged = (type == .flagsChanged)

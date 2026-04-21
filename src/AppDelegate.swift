@@ -43,7 +43,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         TextEditorBridge.shared.warmUp()
         setupTerminalObserver()
         AppFocusTracker.shared.start()
+        
         SystemModifierManager.applyCurrentSettings()
+        SecureInputMonitor.shared.start()
         
         // Start Lightning-fast UDP action server (for Karabiner mode latency fix)
         LocalActionServer.shared.start()
@@ -344,6 +346,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         clipboardStore.stopMonitoring()
         terminalObserver?.stop()
         SystemModifierManager.reset()
+        SecureInputMonitor.shared.stop()
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

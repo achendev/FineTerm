@@ -33,7 +33,7 @@ struct KarabinerExporter {
         }
     }
 
-    static func sync(rules: [PCModeRule]) {
+    static func sync(rules: [PCModeRule], engine: Int) {
         guard FileManager.default.fileExists(atPath: filePath),
               let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
               var json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
@@ -50,7 +50,7 @@ struct KarabinerExporter {
         for rule in rules where rule.isEnabled {
             var manipulators: [[String: Any]] = []
             for map in rule.mappings {
-                let mappedManipulators = createManipulators(from: map, appFilterMode: rule.appFilterMode, bundleIDs: rule.appBundleIDs)
+                let mappedManipulators = createManipulators(from: map, appFilterMode: rule.appFilterMode, bundleIDs: rule.appBundleIDs, engine: engine)
                 manipulators.append(contentsOf: mappedManipulators)
             }
             if !manipulators.isEmpty {
@@ -61,7 +61,7 @@ struct KarabinerExporter {
             }
         }
 
-        // 2. Export Global Shortcuts (UDP commands)
+        // 2. Export Global Shortcuts (UDP commands) unconditionally handled by Karabiner
         let globalManipulators = getGlobalShortcutManipulators()
         if !globalManipulators.isEmpty {
             newRules.append([
@@ -251,10 +251,10 @@ struct KarabinerExporter {
         let m1 = UserDefaults.standard.string(forKey: mod1Key) ?? "right control"
         let m2 = UserDefaults.standard.string(forKey: mod2Key) ?? "shift"
         let k = UserDefaults.standard.string(forKey: keyKey) ?? defKey
-        return[ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
+        return [ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
     }
 
-    static func makeURLManipulator(trigger: ShortcutTrigger, url: String) -> [String: Any]? {
+    static func makeURLManipulator(trigger: ShortcutTrigger, url: String) ->[String: Any]? {
         var k = trigger.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         var primaryMod = trigger.modifier.replacingOccurrences(of: " ", with: "_")
         var secMod = trigger.modifier2?.replacingOccurrences(of: " ", with: "_")
@@ -360,13 +360,13 @@ struct KarabinerExporter {
     }
 
     static func getSystemSimpleModifications() -> [[String: Any]] {
-        guard UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) else { return[] }
+        guard UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) else { return [] }
         return getFallbackSimpleModifications()
     }
 
     // MARK: - Internal Mapping Logic
 
-    static func createManipulators(from map: KeyMap, appFilterMode: AppFilterMode, bundleIDs: [String]) -> [[String: Any]] {
+    static func createManipulators(from map: KeyMap, appFilterMode: AppFilterMode, bundleIDs: [String], engine: Int) -> [[String: Any]] {
         let fromParts = parse(map.from)
         guard let fromKey = fromParts.key else { return [] }
         
@@ -449,6 +449,14 @@ struct KarabinerExporter {
             }
         }
         
+        if engine == 2 {
+            conditions.append([
+                "type": "variable_if",
+                "name": "fineterm_secure_input",
+                "value": 1
+            ])
+        }
+        
         if !conditions.isEmpty {
             manipulator["conditions"] = conditions
         }
@@ -458,7 +466,7 @@ struct KarabinerExporter {
         return manipulators
     }
 
-    static func applyKey(_ k: String, to dict: inout [String: Any]) {
+    static func applyKey(_ k: String, to dict: inout[String: Any]) {
         let mapped = mapKeyString(k)
         switch mapped {
         case "button1", "left_click": dict["pointing_button"] = "button1"
@@ -539,15 +547,15 @@ struct KarabinerExporter {
 
     static func mapFunc(_ f: String) -> [String: Any]? {
         switch f {
-        case "copy": return["key_code": "c", "modifiers": ["left_command"]]
-        case "paste": return["key_code": "v", "modifiers": ["left_command"]]
-        case "cut": return["key_code": "x", "modifiers": ["left_command"]]
-        case "undo": return["key_code": "z", "modifiers": ["left_command"]]
-        case "redo": return["key_code": "z", "modifiers": ["left_command", "left_shift"]]
-        case "select_all": return["key_code": "a", "modifiers": ["left_command"]]
-        case "save": return["key_code": "s", "modifiers": ["left_command"]]
-        case "find": return["key_code": "f", "modifiers": ["left_command"]]
-        case "lang_switch": return["key_code": "spacebar", "modifiers": ["left_control"]]
+        case "copy": return ["key_code": "c", "modifiers": ["left_command"]]
+        case "paste": return ["key_code": "v", "modifiers": ["left_command"]]
+        case "cut": return ["key_code": "x", "modifiers": ["left_command"]]
+        case "undo": return ["key_code": "z", "modifiers": ["left_command"]]
+        case "redo": return ["key_code": "z", "modifiers": ["left_command", "left_shift"]]
+        case "select_all": return ["key_code": "a", "modifiers": ["left_command"]]
+        case "save": return ["key_code": "s", "modifiers": ["left_command"]]
+        case "find": return ["key_code": "f", "modifiers": ["left_command"]]
+        case "lang_switch": return ["shell_command": "/bin/bash -c \"echo -n 'fineterm/lang-switch' > /dev/udp/127.0.0.1/61234\""]
         default: return nil
         }
     }

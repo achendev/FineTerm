@@ -1,4 +1,4 @@
-#[005] Karabiner-Elements Engine Integration & LocalActionServer
+# [005] Karabiner-Elements Engine Integration & LocalActionServer
 
 ## 1. Summary
 FineTerm allows users to offload "PC Mode" execution to **Karabiner-Elements**. To make this work flawlessly (and fix latency on App Switching), FineTerm establishes a native, lightning-fast UDP communication bridge with Karabiner instead of using sluggish URL schemes.
@@ -10,10 +10,13 @@ Previously, if you pressed `Right Cmd` to trigger a Custom App Shortcut in Karab
 *   **The Result:** The action is transmitted, parsed, and executed in **< 1 millisecond**, making app switching feel entirely native and instantly severing the event stream to the password field.
 
 ## 3. The Double-Swap Bug
-When `pcModeEngine` is set to `1` (Full Karabiner), `SystemModifierManager.swift` forcefully unloads its `hidutil` bindings. Karabiner natively exports System Modifiers globally via `karabiner.json`. If `hidutil` was left running alongside it, the OS would apply the physical swap via Karabiner (e.g. `Cmd` -> `Opt`), and then `hidutil` would see the new state and swap it again. This caused the "Ctrl+Backspace deletes a letter instead of a word" and broken app switching issues.
+When `pcModeEngine` is set to `1` (Full Karabiner) or `2` (Hybrid Auto), `SystemModifierManager.swift` forcefully unloads its `hidutil` bindings. Karabiner natively exports System Modifiers globally via `karabiner.json`. If `hidutil` was left running alongside it, the OS would apply the physical swap via Karabiner (e.g. `Cmd` -> `Opt`), and then `hidutil` would see the new state and swap it again. This caused the "Ctrl+Backspace deletes a letter instead of a word" and broken app switching issues.
 
 ## 4. The Caps Lock Chaining Bug
-Karabiner evaluates Complex Modifications sequentially but does NOT inherently chain them. If the user mapped Caps Lock to `F20` via System Modifiers, and mapped `F20 -> func:paste` in PC Mode Rules, pressing Caps Lock would just output `F20` and stop. `KarabinerExporter` now automatically injects a duplicate underlying rule targeting `caps_lock` explicitly whenever `F20` is referenced and Caps Lock is physically mapped to it.
+Karabiner evaluates Complex Modifications sequentially but does NOT inherently chain them. If the user mapped Caps Lock to `F20` via System Modifiers, and mapped `F20 -> func:paste` in PC Mode Rules, pressing Caps Lock would just output `F20` and stop. `KarabinerExporter` automatically maps logical rules safely preventing chain breaks.
 
-## 5. Elimination of Hybrid Mode
-Previous iterations attempted to poll the WindowServer 10 times a second to toggle a `fineterm_secure_input` variable dynamically. This caused high WindowServer CPU usage and unacceptable delays. Hybrid mode was removed. Users now simply choose between "Internal (Fastest)" for standard usage or "Karabiner (Full)" for uncompromising Secure Input compatibility.
+## 5. Hybrid Mode (Restored)
+Hybrid mode operates by intelligently switching the PC Mode processing engine dynamically in real-time.
+*   It uses `SecureInputMonitor` to check `IsSecureEventInputEnabled()` every 0.25s.
+*   **Standard Usage (Secure Input OFF):** `fineterm_secure_input` variable is set to 0. Karabiner ignores all PC Mode rules and global shortcuts. The internal `kCGHIDEventTap` engine processes them natively with zero-latency.
+*   **Password Fields (Secure Input ON):** `fineterm_secure_input` is set to 1. Karabiner's `variable_if` conditions activate, taking over the input stream safely. The internal engine ignores the keystrokes to prevent double-firing. This ensures 100% reliable input overriding even in highly protected text fields.

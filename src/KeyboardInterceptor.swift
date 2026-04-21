@@ -89,9 +89,16 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return nil 
     }
     
+    // Trigger an immediate secure input check on Enter / Numpad Enter (to catch submitting forms)
+    if effectiveType == .keyDown && (effectiveKeyCode == 36 || effectiveKeyCode == 76) {
+        SecureInputMonitor.shared.triggerActiveCheck()
+    }
+    
     let isKeyDownOrUp = effectiveType == .keyDown || effectiveType == .keyUp || effectiveType == .flagsChanged
     let flags = event.flags
     let frontApp = WindowCycleService.getRealFrontmostApp()
+    
+    let engine = UserDefaults.standard.integer(forKey: AppConfig.Keys.pcModeEngine)
     
     if isKeyDownOrUp {
         let frontAppID = frontApp?.bundleIdentifier ?? ""
@@ -102,6 +109,11 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     }
     
     guard effectiveType == .keyDown || effectiveType == .flagsChanged else {
+        return Unmanaged.passUnretained(event)
+    }
+    
+    // If Karabiner is active (Full or Hybrid), it ALWAYS handles global shortcuts unconditionally via karabiner.json
+    if engine > 0 {
         return Unmanaged.passUnretained(event)
     }
     
@@ -160,37 +172,45 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return Unmanaged.passUnretained(event)
     }
     
+    // Trigger an immediate secure input check on any shortcut execution (to catch switching into password fields)
     if isNextMatch || isPrevMatch || isToggleGroupMatch {
+        SecureInputMonitor.shared.triggerActiveCheck()
         DispatchQueue.main.async { WindowCycleService.executeCycle(isNext: isNextMatch, isPrev: isPrevMatch, isToggle: isToggleGroupMatch) }
         return effectiveType == .keyDown ? nil : Unmanaged.passUnretained(event)
     }
     
     if let shortcut = matchedCustomShortcut {
+        SecureInputMonitor.shared.triggerActiveCheck()
         DispatchQueue.main.async { WindowCycleService.executeCustomShortcut(by: shortcut.id) }
         return effectiveType == .keyDown ? nil : Unmanaged.passUnretained(event)
     }
     
     if isLibraryAddMatch {
+        SecureInputMonitor.shared.triggerActiveCheck()
         DispatchQueue.main.async { if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.showLibraryAddWindow() } }
         return nil
     }
 
     if isLibraryOpenMatch {
+        SecureInputMonitor.shared.triggerActiveCheck()
         DispatchQueue.main.async { if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.toggleLibraryWindow() } }
         return nil
     }
     
     if isMainMatch {
+        SecureInputMonitor.shared.triggerActiveCheck()
         DispatchQueue.main.async { WindowCycleService.handleMainToggle() }
         return nil
     }
     
     if isToggleMatch {
+        SecureInputMonitor.shared.triggerActiveCheck()
         DispatchQueue.main.async { WindowCycleService.handleTerminalToggle() }
         return nil
     }
     
     if isClipMatch {
+        SecureInputMonitor.shared.triggerActiveCheck()
         DispatchQueue.main.async { if let appDelegate = NSApp.delegate as? AppDelegate { appDelegate.toggleClipboardWindow() } }
         return nil
     }

@@ -229,6 +229,7 @@ struct PCModeSettingsTab: View {
                     Picker("", selection: $pcModeEngine) {
                         Text("Internal (Fastest)").tag(0)
                         Text("Karabiner (Full)").tag(1)
+                        Text("Hybrid (Auto)").tag(2)
                     }
                     .labelsHidden()
                     .pickerStyle(SegmentedPickerStyle())
@@ -292,17 +293,18 @@ struct PCModeSettingsTab: View {
     }
     
     private func syncEngine() {
-        if pcModeEngine == 1 {
-            KarabinerExporter.sync(rules: rules)
+        if pcModeEngine == 1 || pcModeEngine == 2 {
+            KarabinerExporter.sync(rules: rules, engine: pcModeEngine)
         } else {
             KarabinerExporter.clear()
         }
+        SecureInputMonitor.shared.start()
     }
     
     private func updateModifiers() {
         SystemModifierManager.applyCurrentSettings()
         // Ensure Karabiner gets updated system modifiers if it's running
-        if pcModeEngine == 1 {
+        if pcModeEngine == 1 || pcModeEngine == 2 {
             syncEngine()
         }
     }
@@ -321,8 +323,8 @@ struct PCModeSettingsTab: View {
             if let encoded = try? JSONEncoder().encode(currentRules) {
                 DispatchQueue.main.async {
                     self.pcModeRulesData = encoded
-                    if self.pcModeEngine == 1 {
-                        KarabinerExporter.sync(rules: currentRules)
+                    if self.pcModeEngine == 1 || self.pcModeEngine == 2 {
+                        KarabinerExporter.sync(rules: currentRules, engine: self.pcModeEngine)
                     }
                 }
             }

@@ -49,6 +49,7 @@ class LocalActionServer {
             case "fineterm/library-open": if let d = NSApp.delegate as? AppDelegate { d.toggleLibraryWindow() }
             case "fineterm/terminal-toggle": WindowCycleService.handleTerminalToggle()
             case "fineterm/main-toggle": WindowCycleService.handleMainToggle()
+            case "fineterm/lang-switch": LangSwitchService.shared.switchKeyboardLanguage()
             case "fineterm/type-clipboard":
                 if let string = NSPasteboard.general.string(forType: .string) {
                     // Set a brisk 10ms delay for smooth typing via fast macro server

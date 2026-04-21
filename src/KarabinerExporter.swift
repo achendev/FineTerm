@@ -2,6 +2,36 @@ import Foundation
 
 struct KarabinerExporter {
     static let filePath = NSHomeDirectory() + "/.config/karabiner/karabiner.json"
+    private static let syncedSimpleModsKey = "KarabinerSyncedSimpleMods"
+
+    private static func isSameSimpleMod(_ a: [String: Any], _ b: [String: Any]) -> Bool {
+        guard let aFrom = a["from"] as? [String: Any], let bFrom = b["from"] as? [String: Any],
+              let aFromCode = aFrom["key_code"] as? String, let bFromCode = bFrom["key_code"] as? String else {
+            return false
+        }
+        
+        var aToCode = ""
+        if let aToArray = a["to"] as? [[String: Any]], let first = aToArray.first, let code = first["key_code"] as? String {
+            aToCode = code
+        } else if let aToDict = a["to"] as? [String: Any], let code = aToDict["key_code"] as? String {
+            aToCode = code
+        }
+        
+        var bToCode = ""
+        if let bToArray = b["to"] as? [[String: Any]], let first = bToArray.first, let code = first["key_code"] as? String {
+            bToCode = code
+        } else if let bToDict = b["to"] as? [String: Any], let code = bToDict["key_code"] as? String {
+            bToCode = code
+        }
+        
+        return aFromCode == bFromCode && aToCode == bToCode
+    }
+
+    private static func removeMods(_ mods: [[String: Any]], thatMatch targets: [[String: Any]]) -> [[String: Any]] {
+        return mods.filter { mod in
+            !targets.contains { target in isSameSimpleMod(mod, target) }
+        }
+    }
 
     static func sync(rules: [PCModeRule]) {
         guard FileManager.default.fileExists(atPath: filePath),
@@ -41,7 +71,7 @@ struct KarabinerExporter {
         }
 
         // 3. Export System Modifier Swaps (As Simple Modifications)
-        let systemSimpleMods = getSystemSimpleModifications()
+        var systemSimpleMods = getSystemSimpleModifications()
 
         // Find Target Profile
         var targetProfileIndex = 0
@@ -70,12 +100,26 @@ struct KarabinerExporter {
         // --- UPDATE SIMPLE MODIFICATIONS ---
         var existingSimpleMods = profiles[targetProfileIndex]["simple_modifications"] as? [[String: Any]] ?? []
         
-        existingSimpleMods = existingSimpleMods.filter { mod in
-            return mod["__fineterm"] == nil
+        existingSimpleMods = existingSimpleMods.filter { $0["__fineterm"] == nil }
+        
+        if let previousData = UserDefaults.standard.data(forKey: syncedSimpleModsKey),
+           let previousMods = try? JSONSerialization.jsonObject(with: previousData, options: []) as? [[String: Any]] {
+            existingSimpleMods = removeMods(existingSimpleMods, thatMatch: previousMods)
+        } else {
+            let fallbackMods = getFallbackSimpleModifications()
+            existingSimpleMods = removeMods(existingSimpleMods, thatMatch: fallbackMods)
+        }
+        
+        for i in 0..<systemSimpleMods.count {
+            systemSimpleMods[i].removeValue(forKey: "__fineterm")
         }
         
         existingSimpleMods.append(contentsOf: systemSimpleMods)
         profiles[targetProfileIndex]["simple_modifications"] = existingSimpleMods
+        
+        if let trackedData = try? JSONSerialization.data(withJSONObject: systemSimpleMods, options: []) {
+            UserDefaults.standard.set(trackedData, forKey: syncedSimpleModsKey)
+        }
 
         // SAVE
         json["profiles"] = profiles
@@ -117,8 +161,14 @@ struct KarabinerExporter {
             }
             
             if let existingSimpleMods = profiles[i]["simple_modifications"] as? [[String: Any]] {
-                let filtered = existingSimpleMods.filter { mod in
-                    return mod["__fineterm"] == nil
+                var filtered = existingSimpleMods.filter { $0["__fineterm"] == nil }
+                
+                if let previousData = UserDefaults.standard.data(forKey: syncedSimpleModsKey),
+                   let previousMods = try? JSONSerialization.jsonObject(with: previousData, options: []) as? [[String: Any]] {
+                    filtered = removeMods(filtered, thatMatch: previousMods)
+                } else {
+                    let fallbackMods = getFallbackSimpleModifications()
+                    filtered = removeMods(filtered, thatMatch: fallbackMods)
                 }
                 
                 if filtered.count != existingSimpleMods.count {
@@ -137,6 +187,8 @@ struct KarabinerExporter {
                 }
             }
         }
+        
+        UserDefaults.standard.removeObject(forKey: syncedSimpleModsKey)
     }
 
     // MARK: - App Shortcuts & Navigations
@@ -192,7 +244,7 @@ struct KarabinerExporter {
         return manipulators
     }
 
-    static func loadGroupTriggers(data: Data?, mod1Key: String, mod2Key: String, keyKey: String, defKey: String) ->[ShortcutTrigger] {
+    static func loadGroupTriggers(data: Data?, mod1Key: String, mod2Key: String, keyKey: String, defKey: String) -> [ShortcutTrigger] {
         if let d = data, let decoded = try? JSONDecoder().decode([ShortcutTrigger].self, from: d), !decoded.isEmpty {
             return decoded
         }
@@ -257,8 +309,8 @@ struct KarabinerExporter {
     }
 
     // MARK: - System Modifier Swaps
-    static func getSystemSimpleModifications() -> [[String: Any]] {
-        guard UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) else { return[] }
+
+    static func getFallbackSimpleModifications() -> [[String: Any]] {
         var simpleMods: [[String: Any]] = []
 
         let mapFn = UserDefaults.standard.string(forKey: AppConfig.Keys.systemModifierMapFn) ?? "control"
@@ -307,11 +359,16 @@ struct KarabinerExporter {
         return simpleMods
     }
 
+    static func getSystemSimpleModifications() -> [[String: Any]] {
+        guard UserDefaults.standard.bool(forKey: AppConfig.Keys.systemModifierSwapEnabled) else { return[] }
+        return getFallbackSimpleModifications()
+    }
+
     // MARK: - Internal Mapping Logic
 
     static func createManipulators(from map: KeyMap, appFilterMode: AppFilterMode, bundleIDs: [String]) -> [[String: Any]] {
         let fromParts = parse(map.from)
-        guard let fromKey = fromParts.key else { return[] }
+        guard let fromKey = fromParts.key else { return [] }
         
         var manipulators: [[String: Any]] = []
 
@@ -343,7 +400,6 @@ struct KarabinerExporter {
                 toArray.append(["shell_command": "/bin/bash -c \"echo -n 'fineterm/type-text?b64=\(base64)' > /dev/udp/127.0.0.1/61234\""])
             }
         } else {
-            // FIX: Using Custom Split to prevent comma key mapping bugs
             let parts = KeyboardParser.splitActions(map.to)
             for part in parts {
                 let toParts = parse(part)
@@ -373,7 +429,7 @@ struct KarabinerExporter {
             }
         }
 
-        guard !toArray.isEmpty else { return[] }
+        guard !toArray.isEmpty else { return [] }
 
         var manipulator: [String: Any] = [
             "type": "basic",
@@ -425,7 +481,7 @@ struct KarabinerExporter {
 
     static func parse(_ string: String) -> (key: String?, modifiers: [String]) {
         let parts = string.components(separatedBy: "+").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
-        guard !parts.isEmpty else { return (nil,[]) }
+        guard !parts.isEmpty else { return (nil, []) }
 
         let rawKey = parts.last!
         var modifiers: [String] = []
@@ -481,9 +537,9 @@ struct KarabinerExporter {
         }
     }
 
-    static func mapFunc(_ f: String) ->[String: Any]? {
+    static func mapFunc(_ f: String) -> [String: Any]? {
         switch f {
-        case "copy": return ["key_code": "c", "modifiers": ["left_command"]]
+        case "copy": return["key_code": "c", "modifiers": ["left_command"]]
         case "paste": return["key_code": "v", "modifiers": ["left_command"]]
         case "cut": return["key_code": "x", "modifiers": ["left_command"]]
         case "undo": return["key_code": "z", "modifiers": ["left_command"]]

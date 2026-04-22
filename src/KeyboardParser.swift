@@ -57,11 +57,12 @@ struct KeyboardParser {
     
     // Custom split function that prevents commas from splitting if they are used as a key
     static func splitActions(_ input: String) -> [String] {
+        let cleanedInput = input.components(separatedBy: .controlCharacters).joined()
         var actions: [String] = []
         var currentAction = ""
         var expectsKey = true
 
-        for char in input {
+        for char in cleanedInput {
             if char == " " {
                 currentAction.append(char)
                 continue
@@ -108,17 +109,18 @@ struct KeyboardParser {
     }
     
     static func parseKeyString(_ input: String) -> (coreFlags: CGEventFlags, strictFlags: [String], key: String) {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedInput = input.components(separatedBy: .controlCharacters).joined()
+        let trimmed = cleanedInput.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.lowercased().hasPrefix("shell:") {
-            return ([],[], trimmed)
+            return ([], [], trimmed)
         }
         
-        let rawParts = input.components(separatedBy: "+")
+        let rawParts = cleanedInput.components(separatedBy: "+")
         let parts = rawParts.map { 
             $0.trimmingCharacters(in: .whitespaces).lowercased() 
         }.filter { !$0.isEmpty }
         
-        guard !parts.isEmpty else { return ([],[], "") }
+        guard !parts.isEmpty else { return ([], [], "") }
         
         var coreFlags: CGEventFlags = []
         var strictFlags: [String] = []

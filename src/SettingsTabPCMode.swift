@@ -31,9 +31,12 @@ struct PCModeRuleRowView: View {
                     HStack(spacing: 8) {
                         Text("Map").font(.caption).foregroundColor(.secondary).frame(width: 25, alignment: .leading)
                         
-                        TextField("e.g. ctrl + c", text: $rule.mappings[mappingIndex].from)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .frame(maxWidth: .infinity)
+                        TextField("e.g. ctrl + c", text: Binding(
+                            get: { rule.mappings[mappingIndex].from },
+                            set: { rule.mappings[mappingIndex].from = $0.components(separatedBy: .controlCharacters).joined() }
+                        ))
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .frame(maxWidth: .infinity)
                         
                         Text("to").font(.caption).foregroundColor(.secondary)
                         

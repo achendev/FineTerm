@@ -255,7 +255,7 @@ struct KarabinerExporter {
     }
 
     static func makeURLManipulator(trigger: ShortcutTrigger, url: String) ->[String: Any]? {
-        var k = trigger.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var k = trigger.key.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .controlCharacters).joined().lowercased()
         var primaryMod = trigger.modifier.replacingOccurrences(of: " ", with: "_")
         var secMod = trigger.modifier2?.replacingOccurrences(of: " ", with: "_")
 
@@ -488,7 +488,8 @@ struct KarabinerExporter {
     }
 
     static func parse(_ string: String) -> (key: String?, modifiers: [String]) {
-        let parts = string.components(separatedBy: "+").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
+        let cleanedString = string.components(separatedBy: .controlCharacters).joined()
+        let parts = cleanedString.components(separatedBy: "+").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
         guard !parts.isEmpty else { return (nil, []) }
 
         let rawKey = parts.last!

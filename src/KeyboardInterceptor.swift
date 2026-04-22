@@ -45,6 +45,7 @@ class KeyboardInterceptor {
         }
         KeyboardCache.shared.stop()
         PCModeProcessor.shared.reset()
+        ScrollModeManager.shared.isActive = false
         globalKeyboardEventTap = nil
         eventTap = nil
         runLoopSource = nil

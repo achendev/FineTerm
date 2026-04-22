@@ -41,6 +41,11 @@ class PCModeProcessor {
                 let mappedTo = mapping.keyCode
                 let mappedFlags = mapping.flags
                 
+                if mappedTo == 3000 {
+                    ScrollModeManager.shared.isActive = false
+                    return true
+                }
+                
                 if mappedTo >= 2000 {
                     let btn = Int32(mappedTo - 2000)
                     KeyboardEventInjector.postMouseEvent(button: btn, isDown: false)

@@ -546,7 +546,7 @@ struct KarabinerExporter {
         }
     }
 
-    static func mapFunc(_ f: String) -> [String: Any]? {
+    static func mapFunc(_ f: String) ->[String: Any]? {
         switch f {
         case "copy": return ["key_code": "c", "modifiers": ["left_command"]]
         case "paste": return ["key_code": "v", "modifiers": ["left_command"]]
@@ -557,6 +557,7 @@ struct KarabinerExporter {
         case "save": return ["key_code": "s", "modifiers": ["left_command"]]
         case "find": return ["key_code": "f", "modifiers": ["left_command"]]
         case "lang_switch": return ["shell_command": "/bin/bash -c \"echo -n 'fineterm/lang-switch' > /dev/udp/127.0.0.1/61234\""]
+        case "scroll_mode": return ["software_function": ["mouse_motion_to_scroll": ["options": ["momentum_scroll_enabled": true, "speed_multiplier": 1.0]]]]
         default: return nil
         }
     }

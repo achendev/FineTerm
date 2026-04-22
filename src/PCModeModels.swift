@@ -10,21 +10,24 @@ struct KeyMap: Identifiable, Codable, Equatable {
     var id = UUID()
     var from: String
     var to: String
+    var isStrict: Bool = false
     
     enum CodingKeys: String, CodingKey {
-        case id, from, to
+        case id, from, to, isStrict
         case fromKey, fromModifiers, toKey, toModifiers
     }
     
-    init(id: UUID = UUID(), from: String, to: String) {
+    init(id: UUID = UUID(), from: String, to: String, isStrict: Bool = false) {
         self.id = id
         self.from = from
         self.to = to
+        self.isStrict = isStrict
     }
     
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        isStrict = try container.decodeIfPresent(Bool.self, forKey: .isStrict) ?? false
         
         if let f = try? container.decode(String.self, forKey: .from),
            let t = try? container.decode(String.self, forKey: .to) {
@@ -49,6 +52,7 @@ struct KeyMap: Identifiable, Codable, Equatable {
         try container.encode(id, forKey: .id)
         try container.encode(from, forKey: .from)
         try container.encode(to, forKey: .to)
+        try container.encode(isStrict, forKey: .isStrict)
     }
 }
 

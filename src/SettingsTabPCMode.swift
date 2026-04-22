@@ -44,6 +44,11 @@ struct PCModeRuleRowView: View {
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                             .frame(maxWidth: .infinity)
                             
+                        Toggle("Strict", isOn: $rule.mappings[mappingIndex].isStrict)
+                            .toggleStyle(.checkbox)
+                            .controlSize(.mini)
+                            .help("If checked, ignores the action if any extra modifiers are pressed.")
+                            
                         Button(action: { rule.mappings.remove(at: mappingIndex) }) {
                             Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                         }

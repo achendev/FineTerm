@@ -104,6 +104,7 @@ class KeyboardCache {
                             fromKeyCode: fromCode, 
                             fromCoreFlags: fromParsed.coreFlags, 
                             fromStrictFlags: fromParsed.strictFlags, 
+                            isStrict: map.isStrict,
                             isShell: isShell,
                             shellCommand: shellCommand,
                             isFunc: isFunc,
@@ -137,6 +138,6 @@ class KeyboardCache {
         let m1 = UserDefaults.standard.string(forKey: oldMod1) ?? "right control"
         let m2 = UserDefaults.standard.string(forKey: oldMod2) ?? "shift"
         let k = UserDefaults.standard.string(forKey: oldKey) ?? defaultKey
-        return[ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
+        return [ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
     }
 }

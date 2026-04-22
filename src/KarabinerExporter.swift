@@ -254,7 +254,7 @@ struct KarabinerExporter {
         return [ShortcutTrigger(key: k, modifier: m1, modifier2: m2 == "none" ? nil : m2)]
     }
 
-    static func makeURLManipulator(trigger: ShortcutTrigger, url: String) ->[String: Any]? {
+    static func makeURLManipulator(trigger: ShortcutTrigger, url: String) -> [String: Any]? {
         var k = trigger.key.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .controlCharacters).joined().lowercased()
         var primaryMod = trigger.modifier.replacingOccurrences(of: " ", with: "_")
         var secMod = trigger.modifier2?.replacingOccurrences(of: " ", with: "_")
@@ -376,9 +376,15 @@ struct KarabinerExporter {
         applyKey(fromKey, to: &fromDict)
 
         if !fromParts.modifiers.isEmpty {
-            fromDict["modifiers"] = ["mandatory": fromParts.modifiers, "optional": ["any"]]
+            if map.isStrict {
+                fromDict["modifiers"] = ["mandatory": fromParts.modifiers]
+            } else {
+                fromDict["modifiers"] = ["mandatory": fromParts.modifiers, "optional": ["any"]]
+            }
         } else {
-            fromDict["modifiers"] = ["optional": ["any"]]
+            if !map.isStrict {
+                fromDict["modifiers"] = ["optional": ["any"]]
+            }
         }
 
         var toArray: [[String: Any]] = []
@@ -555,7 +561,7 @@ struct KarabinerExporter {
         }
     }
 
-    static func mapFunc(_ f: String) ->[String: Any]? {
+    static func mapFunc(_ f: String) -> [String: Any]? {
         switch f {
         case "copy": return ["key_code": "c", "modifiers": ["left_command"]]
         case "paste": return ["key_code": "v", "modifiers": ["left_command"]]

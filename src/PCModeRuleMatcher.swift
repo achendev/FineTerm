@@ -16,7 +16,12 @@ struct PCModeRuleMatcher {
         }
         
         let coreEventFlags = cleanEventFlags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
-        if !coreEventFlags.isSuperset(of: map.fromCoreFlags) { return false }
+        
+        if map.isStrict {
+            if coreEventFlags != map.fromCoreFlags { return false }
+        } else {
+            if !coreEventFlags.isSuperset(of: map.fromCoreFlags) { return false }
+        }
         
         var strictMatch = true
         let raw = cleanEventFlags.rawValue

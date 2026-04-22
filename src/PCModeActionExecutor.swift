@@ -25,7 +25,7 @@ struct PCModeActionExecutor {
                 // If it is a holdable function like scroll_mode, record it with a magic key code
                 if map.funcCommand == "scroll_mode" {
                     ScrollModeManager.shared.isActive = true
-                    PCModeProcessor.shared.activeRemaps[rawKeyCode] = (keyCode: 3000, flags: [])
+                    PCModeProcessor.shared.activeRemaps[rawKeyCode] = (keyCode: 3000, flags: originalFlags)
                 } else {
                     PCModeProcessor.shared.activeRemaps[rawKeyCode] = (keyCode: 0, flags: [])
                 }

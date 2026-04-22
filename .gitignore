@@ -3,3 +3,4 @@ bin/
 *.app
 *.dmg
 dist/
+fineterm_settings_profile.json

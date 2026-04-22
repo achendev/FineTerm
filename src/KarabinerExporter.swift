@@ -436,6 +436,15 @@ struct KarabinerExporter {
             "from": fromDict,
             "to": toArray
         ]
+        
+        if map.to.trimmingCharacters(in: .whitespaces) == "func: scroll_mode" {
+            var aloneDict: [String: Any] = [:]
+            applyKey(fromKey, to: &aloneDict)
+            if !fromParts.modifiers.isEmpty {
+                aloneDict["modifiers"] = fromParts.modifiers
+            }
+            manipulator["to_if_alone"] = [aloneDict]
+        }
 
         var conditions: [[String: Any]] = []
 

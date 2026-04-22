@@ -14,6 +14,9 @@ class ScrollModeManager {
     private var inertiaTimer: Timer?
     private var flingDetectTimer: Timer?
     
+    private var accumulatedScrollDistance: Double = 0
+    var hasScrolledSinceActive = false
+    
     var isActive: Bool {
         get { return _isActive }
         set {
@@ -28,6 +31,8 @@ class ScrollModeManager {
                     velocityY = 0
                     velocityX = 0
                     lastEventTime = ProcessInfo.processInfo.systemUptime
+                    accumulatedScrollDistance = 0
+                    hasScrolledSinceActive = false
                 } else {
                     // Deactivation: Modifier released.
                     // If we were moving fast right before releasing, trigger the momentum fling.
@@ -45,6 +50,11 @@ class ScrollModeManager {
         let now = ProcessInfo.processInfo.systemUptime
         let dt = now - lastEventTime
         lastEventTime = now
+        
+        accumulatedScrollDistance += hypot(deltaX, deltaY)
+        if accumulatedScrollDistance > 5.0 {
+            hasScrolledSinceActive = true
+        }
         
         // 1. Forcefully lock the cursor to prevent drifting while active
         CGWarpMouseCursorPosition(anchorPoint)
@@ -69,7 +79,7 @@ class ScrollModeManager {
         // If we don't receive any more movements for 50ms, it means the finger was lifted.
         // We will then check if the velocity was high enough to start inertia.
         flingDetectTimer?.invalidate()
-        flingDetectTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: false) { [weak self] _ in
+        flingDetectTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: false) {[weak self] _ in
             self?.startInertia()
         }
         // Attach to common modes so it fires reliably during UI events

@@ -42,7 +42,26 @@ class PCModeProcessor {
                 let mappedFlags = mapping.flags
                 
                 if mappedTo == 3000 {
+                    let wasUsed = ScrollModeManager.shared.hasScrolledSinceActive
                     ScrollModeManager.shared.isActive = false
+                    
+                    if !wasUsed {
+                        let source = CGEventSource(stateID: .hidSystemState)
+                        if let down = CGEvent(keyboardEventSource: source, virtualKey: rawKeyCode, keyDown: true),
+                           let up = CGEvent(keyboardEventSource: source, virtualKey: rawKeyCode, keyDown: false) {
+                            
+                            // Re-apply original modifiers that triggered the hold action,
+                            // ensuring we accurately recreate the "to_if_alone" semantic.
+                            down.flags = mappedFlags
+                            up.flags = mappedFlags
+                            
+                            down.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                            up.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                            
+                            down.post(tap: .cghidEventTap)
+                            up.post(tap: .cghidEventTap)
+                        }
+                    }
                     return true
                 }
                 

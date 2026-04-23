@@ -1,7 +1,7 @@
 # [002] Clipboard Manager Subsystem
 
 ## 1. Summary
-The Clipboard Manager monitors the system pasteboard, maintains a history of items (text and images), handles persistence (encrypted), and provides a UI for retrieval. It is designed to handle large datasets without affecting the app's responsiveness.
+The Clipboard Manager monitors the system pasteboard, maintains a history of items (text and images), handles persistence (encrypted), and provides a UI for retrieval. It is designed to handle large datasets without affecting the app's responsiveness or memory footprint.
 
 ## 2. Logic Flow
 
@@ -13,21 +13,21 @@ The Clipboard Manager monitors the system pasteboard, maintains a history of ite
     *   **Text:** Checked against size limits. If > Limit, it is truncated safely.
 4.  **Re-Integration:** The processed `ClipboardItem` is sent back to **Main Thread**.
 5.  **UI Update:** Item is inserted into `history` array.
-6.  **Persistence:** A snapshot is sent to `saveQueue` for writing to disk.
+6.  **Persistence:** A snapshot of `history` is sent to `saveQueue`. The queue securely loads the separate `blobs` file from disk, appends the new blob, and encrypts/saves both files without blocking the main thread.
 
 ### B. Storage Strategy (Split Model)
-To keep the list UI fast, we split data into two layers:
-1.  **History (Fast):** Contains metadata, thumbnails, and truncated text. This is loaded into memory for the List View.
-2.  **Blobs (Slow):** Contains full-resolution images and full-text content. Stored in a separate dictionary `[UUID: String]`.
+To keep the list UI fast and the app memory footprint minimal (< 15MB), we split data into two layers:
+1.  **History (Fast/Memory):** Contains metadata, thumbnails, and truncated text. This is loaded into memory on launch.
+2.  **Blobs (Slow/Disk):** Contains full-resolution images and full-text content. Stored in a separate file `clipboard_blobs.enc` and loaded strictly **on-demand** (e.g., when pasting, deduplicating, or deep searching).
 
 ## 3. Key Classes & Responsibilities
 
 | Class | Role |
 | :--- | :--- |
-| `ClipboardStore.swift` | The "Brain". Handles logic, storage, async queues, and encryption. |
+| `ClipboardStore.swift` | The "Brain". Handles logic, storage, async queues, and memory offloading. |
 | `ClipboardWindowManager` | Manages the floating window lifecycle (show/hide/focus). |
 | `ClipboardHistoryView` | SwiftUI view. Handles search, filtering, and rendering. |
-| `ClipboardWindow` | Custom `NSWindow` subclass to intercept local shortcuts (Esc). |
+| `ClipboardCrypto.swift` | Securely manages independent loading/saving of History and Blobs. |
 
 ## 4. Gotchas & Edge Cases
 *   **UTF-8 Slicing:** Never simply cut a string by bytes. Always check for validity.

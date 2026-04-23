@@ -104,10 +104,17 @@ struct LibrarySettingsTab: View {
             .padding()
         }
         .onAppear {
-            stats = libraryStore.getStats()
+            fetchStats()
         }
         .onChange(of: libraryStore.items.count) { _ in
-            stats = libraryStore.getStats()
+            fetchStats()
+        }
+    }
+    
+    private func fetchStats() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let s = libraryStore.getStats()
+            DispatchQueue.main.async { self.stats = s }
         }
     }
     

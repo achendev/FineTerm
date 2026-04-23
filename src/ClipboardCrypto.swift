@@ -17,7 +17,7 @@ struct ClipboardCrypto {
         }
     }
 
-    static func save<T: Codable>(history: [T], blobs: [UUID: String], fileURL: URL, blobsURL: URL) {
+    static func saveHistory<T: Codable>(history: [T], fileURL: URL) {
         do {
             let key = getEncryptionKey()
             let historyData = try JSONEncoder().encode(history)
@@ -25,41 +25,47 @@ struct ClipboardCrypto {
             if let combined = historyBox.combined {
                 try combined.write(to: fileURL)
             }
-
-            if !blobs.isEmpty {
-                let blobsData = try JSONEncoder().encode(blobs)
-                let blobsBox = try AES.GCM.seal(blobsData, using: key)
-                if let combined = blobsBox.combined {
-                    try combined.write(to: blobsURL)
-                }
-            } else {
+        } catch {
+            print("Crypto Save History Error: \(error)")
+        }
+    }
+    
+    static func saveBlobs(blobs: [UUID: String], blobsURL: URL) {
+        do {
+            if blobs.isEmpty {
                 try? FileManager.default.removeItem(at: blobsURL)
+                return
+            }
+            let key = getEncryptionKey()
+            let blobsData = try JSONEncoder().encode(blobs)
+            let blobsBox = try AES.GCM.seal(blobsData, using: key)
+            if let combined = blobsBox.combined {
+                try combined.write(to: blobsURL)
             }
         } catch {
-            print("Crypto Save Error: \(error)")
+            print("Crypto Save Blobs Error: \(error)")
         }
     }
 
-    static func load<T: Codable>(fileURL: URL, blobsURL: URL, as type: T.Type) -> (history: [T], blobs: [UUID: String]) {
+    static func loadHistory<T: Codable>(fileURL: URL, as type: T.Type) -> [T] {
         let key = getEncryptionKey()
-        let decoder = JSONDecoder()
-        var history: [T] = []
-        var blobs: [UUID: String] = [:]
-
         if let encryptedData = try? Data(contentsOf: fileURL),
            let sealedBox = try? AES.GCM.SealedBox(combined: encryptedData),
            let decryptedData = try? AES.GCM.open(sealedBox, using: key),
-           let h = try? decoder.decode([T].self, from: decryptedData) {
-            history = h
+           let history = try? JSONDecoder().decode([T].self, from: decryptedData) {
+            return history
         }
-
+        return []
+    }
+    
+    static func loadBlobs(blobsURL: URL) -> [UUID: String] {
+        let key = getEncryptionKey()
         if let encryptedBlobs = try? Data(contentsOf: blobsURL),
            let sealedBox = try? AES.GCM.SealedBox(combined: encryptedBlobs),
            let decryptedData = try? AES.GCM.open(sealedBox, using: key),
-           let b = try? decoder.decode([UUID: String].self, from: decryptedData) {
-            blobs = b
+           let blobs = try? JSONDecoder().decode([UUID: String].self, from: decryptedData) {
+            return blobs
         }
-
-        return (history, blobs)
+        return [:]
     }
 }

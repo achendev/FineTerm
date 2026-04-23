@@ -39,10 +39,12 @@ class ClipboardViewModel: ObservableObject {
                     return baseItems
                 }
                 
+                let allBlobs = deepSearch ? store.getAllBlobs() : [:]
+                
                 // Normal Text Search
                 return SearchService.smartFilter(baseItems, query: text) { item in
                     if deepSearch {
-                        return store.getFullContent(for: item)
+                        return allBlobs[item.id] ?? item.content
                     } else {
                         return item.content
                     }

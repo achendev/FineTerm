@@ -14,7 +14,6 @@ struct ClipboardStats {
 
 class ClipboardStore: ObservableObject {
     @Published var history: [ClipboardItem] = []
-    private var blobs: [UUID: String] = [:]
     
     private let fileURL: URL
     private let blobsURL: URL
@@ -35,9 +34,7 @@ class ClipboardStore: ObservableObject {
         blobsURL = appDir.appendingPathComponent("clipboard_blobs.enc")
         lastChangeCount = NSPasteboard.general.changeCount
         
-        let loaded = ClipboardCrypto.load(fileURL: fileURL, blobsURL: blobsURL, as: ClipboardItem.self)
-        self.history = loaded.history
-        self.blobs = loaded.blobs
+        self.history = ClipboardCrypto.loadHistory(fileURL: fileURL, as: ClipboardItem.self)
     }
     
     func startMonitoring() {
@@ -106,75 +103,133 @@ class ClipboardStore: ObservableObject {
     }
     
     private func insertItem(_ item: ClipboardItem, blob: String?) {
+        var isDuplicate = false
         if item.type == .text, let first = history.first, first.type == .text {
-            if let newBlob = blob { if let existingBlob = blobs[first.id], existingBlob == newBlob { return } }
-            else { if first.content == item.content { return } }
+            if first.content == item.content { isDuplicate = true }
         }
+        if isDuplicate { return }
+        
         history.insert(item, at: 0)
-        if let b = blob { blobs[item.id] = b }
-        pruneHistory()
-        save()
+        let idsToRemove = pruneHistory()
+        
+        let hSnapshot = self.history
+        let fURL = self.fileURL
+        let bURL = self.blobsURL
+        let itemID = item.id
+        
+        saveQueue.async {
+            var diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: bURL)
+            if let b = blob { diskBlobs[itemID] = b }
+            for id in idsToRemove { diskBlobs.removeValue(forKey: id) }
+            
+            ClipboardCrypto.saveHistory(history: hSnapshot, fileURL: fURL)
+            ClipboardCrypto.saveBlobs(blobs: diskBlobs, blobsURL: bURL)
+        }
     }
     
-    private func pruneHistory() {
+    private func pruneHistory() -> [UUID] {
         let globalLimit = max(1, UserDefaults.standard.integer(forKey: AppConfig.Keys.clipboardHistorySize))
         let imageLimit = max(1, UserDefaults.standard.integer(forKey: AppConfig.Keys.clipboardMaxImages))
         
+        var idsToRemove: [UUID] = []
+        
         let currentImages = history.filter { $0.type == .image }
         if currentImages.count > imageLimit {
-            let idsToRemove = Set(currentImages.suffix(currentImages.count - imageLimit).map { $0.id })
-            history.removeAll { idsToRemove.contains($0.id) }
-            for id in idsToRemove { blobs.removeValue(forKey: id) }
+            let toRemove = currentImages.suffix(currentImages.count - imageLimit)
+            idsToRemove.append(contentsOf: toRemove.map { $0.id })
+            let removeSet = Set(idsToRemove)
+            history.removeAll { removeSet.contains($0.id) }
         }
         
         if history.count > globalLimit {
-            let removedItems = history.suffix(from: globalLimit)
-            for removed in removedItems { blobs.removeValue(forKey: removed.id) }
+            let toRemove = history.suffix(from: globalLimit)
+            idsToRemove.append(contentsOf: toRemove.map { $0.id })
             history = Array(history.prefix(globalLimit))
+        }
+        
+        return idsToRemove
+    }
+    
+    func delete(id: UUID) { 
+        history.removeAll { $0.id == id }
+        let hSnapshot = self.history
+        let fURL = self.fileURL
+        let bURL = self.blobsURL
+        
+        saveQueue.async {
+            var diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: bURL)
+            diskBlobs.removeValue(forKey: id)
+            ClipboardCrypto.saveHistory(history: hSnapshot, fileURL: fURL)
+            ClipboardCrypto.saveBlobs(blobs: diskBlobs, blobsURL: bURL)
         }
     }
     
-    func delete(id: UUID) { history.removeAll { $0.id == id }; blobs.removeValue(forKey: id); save() }
-    func clear() { history.removeAll(); blobs.removeAll(); save() }
-    func getFullContent(for item: ClipboardItem) -> String { return blobs[item.id] ?? item.content }
+    func clear() { 
+        history.removeAll()
+        let fURL = self.fileURL
+        let bURL = self.blobsURL
+        
+        saveQueue.async {
+            ClipboardCrypto.saveHistory(history: [ClipboardItem](), fileURL: fURL)
+            ClipboardCrypto.saveBlobs(blobs: [:], blobsURL: bURL)
+        }
+    }
+    
+    func getFullContent(for item: ClipboardItem) -> String { 
+        let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: blobsURL)
+        return diskBlobs[item.id] ?? item.content 
+    }
+    
+    func getAllBlobs() -> [UUID: String] {
+        return ClipboardCrypto.loadBlobs(blobsURL: blobsURL)
+    }
     
     func removeDuplicates() {
         let historySnapshot = self.history
-        let blobsSnapshot = self.blobs
+        let fURL = self.fileURL
+        let bURL = self.blobsURL
         
         processingQueue.async {[weak self] in
             guard let self = self else { return }
             var seenContent = Set<String>()
             var idsToRemove: Set<UUID> = []
             
+            let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: bURL)
+            
             for item in historySnapshot {
                 let identifier: String
                 if item.type == .text {
-                    identifier = blobsSnapshot[item.id] ?? item.content
+                    identifier = diskBlobs[item.id] ?? item.content
                 } else {
-                    identifier = blobsSnapshot[item.id] ?? item.thumbnailData?.base64EncodedString() ?? UUID().uuidString
+                    identifier = diskBlobs[item.id] ?? item.thumbnailData?.base64EncodedString() ?? UUID().uuidString
                 }
                 if seenContent.contains(identifier) { idsToRemove.insert(item.id) } else { seenContent.insert(identifier) }
             }
             if !idsToRemove.isEmpty {
                 DispatchQueue.main.async {
                     self.history.removeAll { idsToRemove.contains($0.id) }
-                    for id in idsToRemove { self.blobs.removeValue(forKey: id) }
-                    self.save()
+                    let newSnapshot = self.history
+                    self.saveQueue.async {
+                        var newDiskBlobs = diskBlobs
+                        for id in idsToRemove { newDiskBlobs.removeValue(forKey: id) }
+                        ClipboardCrypto.saveHistory(history: newSnapshot, fileURL: fURL)
+                        ClipboardCrypto.saveBlobs(blobs: newDiskBlobs, blobsURL: bURL)
+                    }
                 }
             }
         }
     }
     
     func copyToClipboard(item: ClipboardItem) {
+        let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: blobsURL)
         let pb = NSPasteboard.general
         pb.clearContents()
         if item.type == .image {
-            if let base64 = blobs[item.id], let data = Data(base64Encoded: base64), let image = NSImage(data: data) {
+            if let base64 = diskBlobs[item.id], let data = Data(base64Encoded: base64), let image = NSImage(data: data) {
                 pb.writeObjects([image])
             }
         } else {
-            pb.setString(blobs[item.id] ?? item.content, forType: .string)
+            pb.setString(diskBlobs[item.id] ?? item.content, forType: .string)
         }
     }
     
@@ -183,23 +238,17 @@ class ClipboardStore: ObservableObject {
         let blobsSize = (try? FileManager.default.attributesOfItem(atPath: blobsURL.path)[.size] as? Int64) ?? 0
         var imgCount = 0, txtBlobCount = 0, imgBytes: Int64 = 0, txtBlobBytes: Int64 = 0
         
+        let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: blobsURL)
+        
         for item in history {
             if item.type == .image {
                 imgCount += 1
                 if let thumb = item.thumbnailData { imgBytes += Int64(thumb.count) }
-                if let blob = blobs[item.id] { imgBytes += Int64(blob.utf8.count) }
+                if let blob = diskBlobs[item.id] { imgBytes += Int64(blob.utf8.count) }
             } else {
-                if let blob = blobs[item.id] { txtBlobCount += 1; txtBlobBytes += Int64(blob.utf8.count) }
+                if let blob = diskBlobs[item.id] { txtBlobCount += 1; txtBlobBytes += Int64(blob.utf8.count) }
             }
         }
         return ClipboardStats(totalItems: history.count, imageCount: imgCount, textBlobCount: txtBlobCount, historyDiskSizeBytes: historySize, blobsDiskSizeBytes: blobsSize, imageContentSizeBytes: imgBytes, textBlobContentSizeBytes: txtBlobBytes)
-    }
-    
-    private func save() {
-        let historySnapshot = self.history
-        let blobsSnapshot = self.blobs
-        let fURL = self.fileURL
-        let bURL = self.blobsURL
-        saveQueue.async { ClipboardCrypto.save(history: historySnapshot, blobs: blobsSnapshot, fileURL: fURL, blobsURL: bURL) }
     }
 }

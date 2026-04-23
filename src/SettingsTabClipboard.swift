@@ -203,10 +203,17 @@ struct ClipboardSettingsTab: View {
         }
         .onAppear {
             editorBridge.refreshEditors()
-            stats = clipboardStore.getStats()
+            fetchStats()
         }
         .onChange(of: clipboardStore.history.count) { _ in
-            stats = clipboardStore.getStats()
+            fetchStats()
+        }
+    }
+    
+    private func fetchStats() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let s = clipboardStore.getStats()
+            DispatchQueue.main.async { self.stats = s }
         }
     }
     

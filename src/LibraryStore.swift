@@ -14,7 +14,6 @@ struct LibraryStats {
 
 class LibraryStore: ObservableObject {
     @Published var items: [LibraryItem] = []
-    private var blobs: [UUID: String] = [:]
     
     private let fileURL: URL
     private let blobsURL: URL
@@ -31,9 +30,7 @@ class LibraryStore: ObservableObject {
         fileURL = appDir.appendingPathComponent("library_items.enc")
         blobsURL = appDir.appendingPathComponent("library_blobs.enc")
         
-        let loaded = ClipboardCrypto.load(fileURL: fileURL, blobsURL: blobsURL, as: LibraryItem.self)
-        self.items = loaded.history
-        self.blobs = loaded.blobs
+        self.items = ClipboardCrypto.loadHistory(fileURL: fileURL, as: LibraryItem.self)
     }
     
     func add(title: String, content: String) {
@@ -79,23 +76,64 @@ class LibraryStore: ObservableObject {
     
     private func insertItem(_ item: LibraryItem, blob: String?) {
         items.insert(item, at: 0)
-        if let b = blob { blobs[item.id] = b }
-        save()
+        
+        let itemsSnapshot = self.items
+        let fURL = self.fileURL
+        let bURL = self.blobsURL
+        let itemID = item.id
+        
+        saveQueue.async {
+            var diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: bURL)
+            if let b = blob { diskBlobs[itemID] = b }
+            ClipboardCrypto.saveHistory(history: itemsSnapshot, fileURL: fURL)
+            ClipboardCrypto.saveBlobs(blobs: diskBlobs, blobsURL: bURL)
+        }
     }
     
-    func delete(id: UUID) { items.removeAll { $0.id == id }; blobs.removeValue(forKey: id); save() }
-    func clear() { items.removeAll(); blobs.removeAll(); save() }
-    func getFullContent(for item: LibraryItem) -> String { return blobs[item.id] ?? item.content }
+    func delete(id: UUID) { 
+        items.removeAll { $0.id == id }
+        let itemsSnapshot = self.items
+        let fURL = self.fileURL
+        let bURL = self.blobsURL
+        
+        saveQueue.async {
+            var diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: bURL)
+            diskBlobs.removeValue(forKey: id)
+            ClipboardCrypto.saveHistory(history: itemsSnapshot, fileURL: fURL)
+            ClipboardCrypto.saveBlobs(blobs: diskBlobs, blobsURL: bURL)
+        }
+    }
+    
+    func clear() { 
+        items.removeAll()
+        let fURL = self.fileURL
+        let bURL = self.blobsURL
+        
+        saveQueue.async {
+            ClipboardCrypto.saveHistory(history: [LibraryItem](), fileURL: fURL)
+            ClipboardCrypto.saveBlobs(blobs: [:], blobsURL: bURL)
+        }
+    }
+    
+    func getFullContent(for item: LibraryItem) -> String { 
+        let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: blobsURL)
+        return diskBlobs[item.id] ?? item.content 
+    }
+    
+    func getAllBlobs() -> [UUID: String] {
+        return ClipboardCrypto.loadBlobs(blobsURL: blobsURL)
+    }
     
     func copyToClipboard(item: LibraryItem) {
+        let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: blobsURL)
         let pb = NSPasteboard.general
         pb.clearContents()
         if item.type == .image {
-            if let base64 = blobs[item.id], let data = Data(base64Encoded: base64), let image = NSImage(data: data) {
+            if let base64 = diskBlobs[item.id], let data = Data(base64Encoded: base64), let image = NSImage(data: data) {
                 pb.writeObjects([image])
             }
         } else {
-            pb.setString(blobs[item.id] ?? item.content, forType: .string)
+            pb.setString(diskBlobs[item.id] ?? item.content, forType: .string)
         }
     }
     
@@ -104,23 +142,17 @@ class LibraryStore: ObservableObject {
         let blobsSize = (try? FileManager.default.attributesOfItem(atPath: blobsURL.path)[.size] as? Int64) ?? 0
         var imgCount = 0, txtBlobCount = 0, imgBytes: Int64 = 0, txtBlobBytes: Int64 = 0
         
+        let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: blobsURL)
+        
         for item in items {
             if item.type == .image {
                 imgCount += 1
                 if let thumb = item.thumbnailData { imgBytes += Int64(thumb.count) }
-                if let blob = blobs[item.id] { imgBytes += Int64(blob.utf8.count) }
+                if let blob = diskBlobs[item.id] { imgBytes += Int64(blob.utf8.count) }
             } else {
-                if let blob = blobs[item.id] { txtBlobCount += 1; txtBlobBytes += Int64(blob.utf8.count) }
+                if let blob = diskBlobs[item.id] { txtBlobCount += 1; txtBlobBytes += Int64(blob.utf8.count) }
             }
         }
         return LibraryStats(totalItems: items.count, imageCount: imgCount, textBlobCount: txtBlobCount, historyDiskSizeBytes: historySize, blobsDiskSizeBytes: blobsSize, imageContentSizeBytes: imgBytes, textBlobContentSizeBytes: txtBlobBytes)
-    }
-    
-    private func save() {
-        let itemsSnapshot = self.items
-        let blobsSnapshot = self.blobs
-        let fURL = self.fileURL
-        let bURL = self.blobsURL
-        saveQueue.async { ClipboardCrypto.save(history: itemsSnapshot, blobs: blobsSnapshot, fileURL: fURL, blobsURL: bURL) }
     }
 }

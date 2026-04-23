@@ -28,13 +28,16 @@ class LibraryViewModel: ObservableObject {
                     baseItems = baseItems.filter { $0.type == .image }
                     return baseItems
                 }
+                
+                let allBlobs = deepSearch ? store.getAllBlobs() : [:]
+                
                 return SearchService.smartFilter(baseItems, query: text) { item in
-                    let searchContent = deepSearch ? store.getFullContent(for: item) : item.content
+                    let searchContent = deepSearch ? (allBlobs[item.id] ?? item.content) : item.content
                     return "\(item.title) \(searchContent)"
                 }
             }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] items in
+            .sink {[weak self] items in
                 guard let self = self else { return }
                 self.filteredItems = items
                 if let first = items.first, self.selectedItemID == nil || !items.contains(where: { $0.id == self.selectedItemID }) {

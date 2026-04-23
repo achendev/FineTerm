@@ -46,11 +46,25 @@ struct KarabinerExporter {
 
         var newRules: [[String: Any]] = []
 
+        var allCustomModifiers: Set<String> = []
+        for rule in rules where rule.isEnabled {
+            for map in rule.mappings {
+                let parts = map.from.components(separatedBy: "+").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+                let filtered = parts.filter { $0 != "cursor_move" }
+                let actualFromStr = filtered.joined(separator: " + ")
+                
+                let fromParts = parse(actualFromStr)
+                for cMod in fromParts.customModifiers {
+                    allCustomModifiers.insert(cMod)
+                }
+            }
+        }
+
         // 1. Export PC Mode Rules
         for rule in rules where rule.isEnabled {
             var manipulators: [[String: Any]] = []
             for map in rule.mappings {
-                let mappedManipulators = createManipulators(from: map, appFilterMode: rule.appFilterMode, bundleIDs: rule.appBundleIDs, engine: engine)
+                let mappedManipulators = createManipulators(from: map, appFilterMode: rule.appFilterMode, bundleIDs: rule.appBundleIDs, engine: engine, allCustomModifiers: allCustomModifiers)
                 manipulators.append(contentsOf: mappedManipulators)
             }
             if !manipulators.isEmpty {
@@ -59,6 +73,35 @@ struct KarabinerExporter {
                     "manipulators": manipulators
                 ])
             }
+        }
+
+        // Generate tracker manipulators for custom modifiers (e.g. tracking when f20 is held)
+        var trackerManipulators: [[String: Any]] = []
+        for customMod in allCustomModifiers {
+            var fromDict: [String: Any] = [:]
+            applyKey(customMod, to: &fromDict)
+            fromDict["modifiers"] = ["optional": ["any"]]
+            
+            var toDictAlone: [String: Any] = [:]
+            applyKey(customMod, to: &toDictAlone)
+            
+            trackerManipulators.append([
+                "type": "basic",
+                "from": fromDict,
+                "to": [
+                    ["set_variable": ["name": "fineterm_mod_\(customMod)", "value": 1]],
+                    toDictAlone
+                ],
+                "to_after_key_up": [["set_variable": ["name": "fineterm_mod_\(customMod)", "value": 0]]
+                ]
+            ])
+        }
+        
+        if !trackerManipulators.isEmpty {
+            newRules.append([
+                "description": "FineTerm: Custom Modifier Trackers",
+                "manipulators": trackerManipulators
+            ])
         }
 
         // 2. Export Global Shortcuts (UDP commands) unconditionally handled by Karabiner
@@ -366,8 +409,12 @@ struct KarabinerExporter {
 
     // MARK: - Internal Mapping Logic
 
-    static func createManipulators(from map: KeyMap, appFilterMode: AppFilterMode, bundleIDs: [String], engine: Int) -> [[String: Any]] {
-        let fromParts = parse(map.from)
+    static func createManipulators(from map: KeyMap, appFilterMode: AppFilterMode, bundleIDs: [String], engine: Int, allCustomModifiers: Set<String>) -> [[String: Any]] {
+        let parts = map.from.components(separatedBy: "+").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        let filtered = parts.filter { $0 != "cursor_move" }
+        let actualFromStr = filtered.joined(separator: " + ")
+        
+        let fromParts = parse(actualFromStr)
         guard let fromKey = fromParts.key else { return [] }
         
         var manipulators: [[String: Any]] = []
@@ -435,6 +482,11 @@ struct KarabinerExporter {
             }
         }
 
+        // Output custom modifier tracking if this key acts as one
+        if allCustomModifiers.contains(fromKey) {
+            toArray.append(["set_variable": ["name": "fineterm_mod_\(fromKey)", "value": 1]])
+        }
+
         guard !toArray.isEmpty else { return [] }
 
         var manipulator: [String: Any] = [
@@ -443,6 +495,11 @@ struct KarabinerExporter {
             "to": toArray
         ]
         
+        if allCustomModifiers.contains(fromKey) {
+            manipulator["to_after_key_up"] = [["set_variable": ["name": "fineterm_mod_\(fromKey)", "value": 0]]
+            ]
+        }
+
         if map.to.trimmingCharacters(in: .whitespaces) == "func: scroll_mode" {
             var aloneDict: [String: Any] = [:]
             applyKey(fromKey, to: &aloneDict)
@@ -453,6 +510,15 @@ struct KarabinerExporter {
         }
 
         var conditions: [[String: Any]] = []
+
+        // If this rule requires a custom modifier to be held
+        for customMod in fromParts.customModifiers {
+            conditions.append([
+                "type": "variable_if",
+                "name": "fineterm_mod_\(customMod)",
+                "value": 1
+            ])
+        }
 
         if appFilterMode != .none && !bundleIDs.isEmpty {
             let validIDs = bundleIDs.filter { !$0.isEmpty }.map { "^" + $0.replacingOccurrences(of: ".", with: "\\.") + "$" }
@@ -502,13 +568,14 @@ struct KarabinerExporter {
         }
     }
 
-    static func parse(_ string: String) -> (key: String?, modifiers: [String]) {
+    static func parse(_ string: String) -> (key: String?, modifiers: [String], customModifiers: [String]) {
         let cleanedString = string.components(separatedBy: .controlCharacters).joined()
         let parts = cleanedString.components(separatedBy: "+").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
-        guard !parts.isEmpty else { return (nil, []) }
+        guard !parts.isEmpty else { return (nil, [], []) }
 
         let rawKey = parts.last!
         var modifiers: [String] = []
+        var customModifiers: [String] = []
 
         for mod in parts.dropLast() {
             switch mod {
@@ -521,12 +588,12 @@ struct KarabinerExporter {
             case "shift", "lshift", "left_shift": modifiers.append("left_shift")
             case "rshift", "right_shift": modifiers.append("right_shift")
             case "fn", "globe": modifiers.append("fn")
-            default: break
+            default: customModifiers.append(mapKeyString(mod))
             }
         }
 
         let key = mapKeyString(rawKey)
-        return (key, modifiers)
+        return (key, modifiers, customModifiers)
     }
 
     static func mapKeyString(_ k: String) -> String {

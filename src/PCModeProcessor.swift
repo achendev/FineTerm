@@ -5,9 +5,11 @@ class PCModeProcessor {
     static let shared = PCModeProcessor()
     
     var activeRemaps: [CGKeyCode: (keyCode: CGKeyCode, flags: CGEventFlags)] = [:]
+    var pressedPhysicalKeys: Set<CGKeyCode> = []
     
     func reset() {
         activeRemaps.removeAll()
+        pressedPhysicalKeys.removeAll()
     }
     
     func process(type: CGEventType, keyCode: Int64, flags: CGEventFlags, event: CGEvent, getFrontAppID: () -> String) -> Bool {
@@ -19,6 +21,9 @@ class PCModeProcessor {
         let isDebug = UserDefaults.standard.bool(forKey: "debugMode")
         let isFlagsChanged = (type == .flagsChanged)
         let rawKeyCode = CGKeyCode(keyCode)
+        
+        if type == .keyDown { pressedPhysicalKeys.insert(rawKeyCode) }
+        if type == .keyUp { pressedPhysicalKeys.remove(rawKeyCode) }
         
         var isRelease = false
         if type == .keyUp {
@@ -100,7 +105,7 @@ class PCModeProcessor {
             }
             
             for map in parsedRule.mappings {
-                if PCModeRuleMatcher.match(map: map, rawKeyCode: rawKeyCode, originalFlags: originalFlags, isFlagsChanged: isFlagsChanged) {
+                if PCModeRuleMatcher.match(map: map, rawKeyCode: rawKeyCode, originalFlags: originalFlags, isFlagsChanged: isFlagsChanged, pressedKeys: pressedPhysicalKeys) {
                     if isDebug && type == .keyDown { print("DEBUG: [PCMode]   -> MATCHED! Executing mapping to: '\(map.original.to)'") }
                     return PCModeActionExecutor.execute(map: map, rawKeyCode: rawKeyCode, originalFlags: originalFlags, isFlagsChanged: isFlagsChanged, type: type, event: event)
                 }

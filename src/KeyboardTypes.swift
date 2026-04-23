@@ -11,6 +11,7 @@ struct ParsedKeyMap {
     let fromKeyCode: CGKeyCode
     let fromCoreFlags: CGEventFlags
     let fromStrictFlags: [String]
+    let fromCustomModifiers: [CGKeyCode]
     let isStrict: Bool
     let isShell: Bool
     let shellCommand: String?

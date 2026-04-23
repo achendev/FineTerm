@@ -103,11 +103,11 @@ struct KeyboardParser {
         }
     }
     
-    static func parseKeyString(_ input: String) -> (coreFlags: CGEventFlags, strictFlags: [String], key: String) {
+    static func parseKeyString(_ input: String) -> (coreFlags: CGEventFlags, strictFlags: [String], customModifiers: [CGKeyCode], key: String) {
         let cleanedInput = input.components(separatedBy: .controlCharacters).joined()
         let trimmed = cleanedInput.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.lowercased().hasPrefix("shell:") {
-            return ([], [], trimmed)
+            return ([], [], [], trimmed)
         }
         
         let rawParts = cleanedInput.components(separatedBy: "+")
@@ -115,10 +115,11 @@ struct KeyboardParser {
             $0.trimmingCharacters(in: .whitespaces).lowercased() 
         }.filter { !$0.isEmpty }
         
-        guard !parts.isEmpty else { return ([], [], "") }
+        guard !parts.isEmpty else { return ([], [], [], "") }
         
         var coreFlags: CGEventFlags = []
         var strictFlags: [String] = []
+        var customModifiers: [CGKeyCode] = []
         let key = parts.last!
         
         if parts.count > 1 {
@@ -139,11 +140,16 @@ struct KeyboardParser {
                 case "ropt", "right_option", "ralt": coreFlags.insert(.maskAlternate); strictFlags.append("right_option")
                 case "lshift", "left_shift": coreFlags.insert(.maskShift); strictFlags.append("left_shift")
                 case "rshift", "right_shift": coreFlags.insert(.maskShift); strictFlags.append("right_shift")
-                default: return ([], [], "") 
+                default: 
+                    if let code = getKeyCode(for: mod) {
+                        customModifiers.append(code)
+                    } else {
+                        return ([], [], [], "") 
+                    }
                 }
             }
         }
-        return (coreFlags, strictFlags, key)
+        return (coreFlags, strictFlags, customModifiers, key)
     }
 
     static func parseShortcutTrigger(_ trigger: ShortcutTrigger) -> ParsedShortcutTrigger? {

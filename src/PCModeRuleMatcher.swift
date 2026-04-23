@@ -1,8 +1,12 @@
 import CoreGraphics
 
 struct PCModeRuleMatcher {
-    static func match(map: ParsedKeyMap, rawKeyCode: CGKeyCode, originalFlags: CGEventFlags, isFlagsChanged: Bool) -> Bool {
+    static func match(map: ParsedKeyMap, rawKeyCode: CGKeyCode, originalFlags: CGEventFlags, isFlagsChanged: Bool, pressedKeys: Set<CGKeyCode>) -> Bool {
         if map.fromKeyCode != rawKeyCode { return false }
+        
+        for customMod in map.fromCustomModifiers {
+            if !pressedKeys.contains(customMod) { return false }
+        }
         
         var cleanEventFlags = originalFlags
         if isFlagsChanged {

@@ -103,7 +103,13 @@ class KeyboardCache {
                 for rule in rules where rule.isEnabled {
                     var parsedMappings: [ParsedKeyMap] = []
                     for map in rule.mappings {
-                        let fromParsed = KeyboardParser.parseKeyString(map.from)
+                        
+                        // Parse alias 'cursor_move' syntactically
+                        let parts = map.from.components(separatedBy: "+").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+                        let filtered = parts.filter { $0 != "cursor_move" }
+                        let actualFromStr = filtered.joined(separator: " + ")
+                        
+                        let fromParsed = KeyboardParser.parseKeyString(actualFromStr)
                         guard !fromParsed.key.isEmpty else { continue }
                         guard let fromCode = KeyboardParser.getKeyCode(for: fromParsed.key) else { continue }
                         
@@ -129,8 +135,8 @@ class KeyboardCache {
                             let text = String(map.to[cmdStartIndex...])
                             typeText = text.hasPrefix(" ") ? String(text.dropFirst()) : text
                         } else {
-                            let parts = KeyboardParser.splitActions(map.to)
-                            for part in parts {
+                            let toPartsRaw = KeyboardParser.splitActions(map.to)
+                            for part in toPartsRaw {
                                 let toParsed = KeyboardParser.parseKeyString(part)
                                 guard !toParsed.key.isEmpty else { continue }
                                 guard let code = KeyboardParser.getKeyCode(for: toParsed.key) else { continue }
@@ -144,6 +150,7 @@ class KeyboardCache {
                             fromKeyCode: fromCode, 
                             fromCoreFlags: fromParsed.coreFlags, 
                             fromStrictFlags: fromParsed.strictFlags, 
+                            fromCustomModifiers: fromParsed.customModifiers,
                             isStrict: map.isStrict,
                             isShell: isShell,
                             shellCommand: shellCommand,

@@ -55,6 +55,7 @@ class SettingsWindowManager: NSObject, NSWindowDelegate {
         )
         
         newWindow.title = "Settings"
+        // Keep deterministic memory control. Do not let AppKit auto-release it.
         newWindow.isReleasedWhenClosed = false
         newWindow.center()
         newWindow.setFrameAutosaveName("Settings Window")
@@ -74,6 +75,16 @@ class SettingsWindowManager: NSObject, NSWindowDelegate {
     }
     
     func windowWillClose(_ notification: Notification) {
-        window = nil
+        // CRITICAL FIX: Defer the teardown to the next RunLoop cycle.
+        // Synchronously modifying the contentView during windowWillClose crashes the 
+        // AppKit/SwiftUI bridging engine because the window is still traversing its responder chain.
+        DispatchQueue.main.async { [weak self] in
+            // Destroy the view tree and drop the reference to free up the heavy memory footprint
+            self?.window?.contentView = nil
+            self?.window = nil
+            
+            // Clear the 16x16 icon cache and App List
+            AppListService.shared.clearCache()
+        }
     }
 }

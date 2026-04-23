@@ -27,9 +27,9 @@ struct NativeAppPicker: NSViewRepresentable {
             for app in apps {
                 let item = NSMenuItem(title: app.name, action: nil, keyEquivalent: "")
                 item.representedObject = app.id
-                let icon = NSWorkspace.shared.icon(forFile: app.url.path)
-                icon.size = NSSize(width: 16, height: 16)
-                item.image = icon
+                if let icon = AppListService.shared.getIcon(for: app) {
+                    item.image = icon
+                }
                 nsView.menu?.addItem(item)
             }
         }

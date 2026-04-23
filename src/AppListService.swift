@@ -3,14 +3,15 @@ import Cocoa
 
 class AppListService: ObservableObject {
     static let shared = AppListService()
-    // Reuses EditorApp struct which has id (bundleID), name, and url
     @Published var availableApps: [EditorApp] = []
     
     private var isLoaded = false
     private let scanQueue = DispatchQueue(label: "com.fineterm.appscan", qos: .userInitiated)
     
+    // Explicit 16x16 icon cache to strip multi-megabyte NSImage representations
+    private var iconCache: [String: NSImage] = [:]
+    
     func loadApps(forceReload: Bool = false) {
-        // If already loaded and we aren't forcing a reload, skip.
         if isLoaded && !forceReload { return }
         isLoaded = true
         
@@ -25,16 +26,12 @@ class AppListService: ObservableObject {
                 URL(fileURLWithPath: "/Applications/Utilities")
             ]
             
-            // Add user's personal Applications folder
             let homeApps = fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
             directories.append(homeApps)
             
-            // Scan immediate subdirectories of ~/Applications to find PWA folders 
-            // (e.g. "Chrome Apps.localized", "Edge Apps.localized")
             if let subdirs = try? fm.contentsOfDirectory(at: homeApps, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
                 for subdir in subdirs {
                     var isDir: ObjCBool = false
-                    // If it's a directory and NOT an app itself, add it to our scan list
                     if fm.fileExists(atPath: subdir.path, isDirectory: &isDir), isDir.boolValue, subdir.pathExtension != "app" {
                         directories.append(subdir)
                     }
@@ -63,6 +60,31 @@ class AppListService: ObservableObject {
             DispatchQueue.main.async {
                 self.availableApps = sortedApps
             }
+        }
+    }
+    
+    func getIcon(for app: EditorApp) -> NSImage? {
+        if let cached = iconCache[app.id] { return cached }
+        
+        let rawIcon = NSWorkspace.shared.icon(forFile: app.url.path)
+        let smallSize = NSSize(width: 16, height: 16)
+        let smallIcon = NSImage(size: smallSize)
+        
+        // Rasterize to explicit small bitmap to permanently dump the huge .icns payload
+        smallIcon.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        rawIcon.draw(in: NSRect(origin: .zero, size: smallSize), from: NSRect(origin: .zero, size: rawIcon.size), operation: .sourceOver, fraction: 1.0)
+        smallIcon.unlockFocus()
+        
+        iconCache[app.id] = smallIcon
+        return smallIcon
+    }
+    
+    func clearCache() {
+        DispatchQueue.main.async {
+            self.availableApps = []
+            self.iconCache.removeAll()
+            self.isLoaded = false
         }
     }
 }

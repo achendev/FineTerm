@@ -1,6 +1,13 @@
 import Cocoa
 import CoreGraphics
 
+enum ScrollPhase: Int64 {
+    case began = 1
+    case changed = 2
+    case ended = 3
+    case cancelled = 4
+}
+
 class ScrollModeManager {
     static let shared = ScrollModeManager()
     
@@ -17,6 +24,9 @@ class ScrollModeManager {
     private var accumulatedScrollDistance: Double = 0
     var hasScrolledSinceActive = false
     
+    private var isScrollPhaseActive = false
+    private var isMomentumPhaseActive = false
+    
     var isActive: Bool {
         get { return _isActive }
         set {
@@ -25,6 +35,13 @@ class ScrollModeManager {
                 if newValue {
                     // Activation: Lock anchor and reset physics
                     stopInertia()
+                    
+                    // Failsafe end previous phase if it was somehow stuck
+                    if isScrollPhaseActive {
+                        emitScroll(dx: 0, dy: 0, phase: .ended, momentumPhase: nil)
+                        isScrollPhaseActive = false
+                    }
+                    
                     if let event = CGEvent(source: nil) {
                         anchorPoint = event.location
                     }
@@ -72,14 +89,19 @@ class ScrollModeManager {
             velocityX = 0
         }
         
-        // 3. Emit the active scroll event
-        emitScroll(dx: deltaX, dy: deltaY, isMomentum: false)
+        // 3. Emit the active scroll event with proper macOS phases
+        if !isScrollPhaseActive {
+            emitScroll(dx: deltaX, dy: deltaY, phase: .began, momentumPhase: nil)
+            isScrollPhaseActive = true
+        } else {
+            emitScroll(dx: deltaX, dy: deltaY, phase: .changed, momentumPhase: nil)
+        }
         
         // 4. Restart the fling detector
         // If we don't receive any more movements for 50ms, it means the finger was lifted.
         // We will then check if the velocity was high enough to start inertia.
         flingDetectTimer?.invalidate()
-        flingDetectTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: false) {[weak self] _ in
+        flingDetectTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: false) { [weak self] _ in
             self?.startInertia()
         }
         // Attach to common modes so it fires reliably during UI events
@@ -90,9 +112,25 @@ class ScrollModeManager {
         let speed = hypot(velocityX, velocityY)
         
         // Only fling if the user was moving fast enough when they released/lifted
-        if speed < 150 { return }
+        if speed < 150 {
+            // If speed is too low, we just end the scroll phase and stop.
+            if isScrollPhaseActive {
+                emitScroll(dx: 0, dy: 0, phase: .ended, momentumPhase: nil)
+                isScrollPhaseActive = false
+            }
+            return 
+        }
+        
+        // Transition gracefully from Scroll Phase -> Momentum Phase
+        if isScrollPhaseActive {
+            emitScroll(dx: 0, dy: 0, phase: .ended, momentumPhase: nil)
+            isScrollPhaseActive = false
+        }
         
         var lastTime = ProcessInfo.processInfo.systemUptime
+        
+        isMomentumPhaseActive = true
+        emitScroll(dx: 0, dy: 0, phase: nil, momentumPhase: .began)
         
         // 60 FPS Physics Loop
         inertiaTimer?.invalidate()
@@ -113,7 +151,7 @@ class ScrollModeManager {
             let dy = self.velocityY * dt
             let dx = self.velocityX * dt
             
-            self.emitScroll(dx: dx, dy: dy, isMomentum: true)
+            self.emitScroll(dx: dx, dy: dy, phase: nil, momentumPhase: .changed)
             
             // Apply trackpad-like friction (deceleration)
             // 0.88 closely mimics standard macOS momentum physics
@@ -125,12 +163,17 @@ class ScrollModeManager {
     }
     
     private func stopInertia() {
+        if isMomentumPhaseActive {
+            emitScroll(dx: 0, dy: 0, phase: nil, momentumPhase: .ended)
+            isMomentumPhaseActive = false
+        }
         inertiaTimer?.invalidate()
         inertiaTimer = nil
     }
     
-    private func emitScroll(dx: Double, dy: Double, isMomentum: Bool) {
-        guard abs(dx) > 0.05 || abs(dy) > 0.05 else { return }
+    private func emitScroll(dx: Double, dy: Double, phase: ScrollPhase?, momentumPhase: ScrollPhase?) {
+        // Only ignore completely idle events without state changes
+        if abs(dx) <= 0.05 && abs(dy) <= 0.05 && phase == nil && momentumPhase == nil { return }
         
         // Speed multiplier to match native trackpad sensitivity natively
         let mult: Double = 1.8
@@ -148,13 +191,24 @@ class ScrollModeManager {
         ) {
             // These high-precision fields are REQUIRED for both:
             // 1. Smooth scrolling in Web Browsers (Chrome/Safari)
-            // 2. Correct Tmux scroll accumulation in Terminals (Ghostty/iTerm2 translate this properly to ANSI ticks)
+            // 2. Correct Tmux scroll accumulation in Terminals
             scrollEvent.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: finalY)
             scrollEvent.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: finalX)
             
-            // Flag as a momentum event if generated by the physics timer (allows apps to handle rubber-banding)
-            if isMomentum {
-                scrollEvent.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 2) // 2 = Continuous
+            // Inform the macOS Window Server of the gesture state
+            if let p = phase {
+                scrollEvent.setIntegerValueField(.scrollWheelEventScrollPhase, value: p.rawValue)
+            }
+            
+            if let mp = momentumPhase {
+                scrollEvent.setIntegerValueField(.scrollWheelEventMomentumPhase, value: mp.rawValue)
+            }
+            
+            // Force the event to happen perfectly on the targeted area ONLY if actively holding the shortcut.
+            // During momentum (when released), overriding the location causes the OS to warp the cursor
+            // back to the anchor point 60 times a second, causing the mouse to feel stuck.
+            if _isActive {
+                scrollEvent.location = self.anchorPoint
             }
             
             scrollEvent.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)

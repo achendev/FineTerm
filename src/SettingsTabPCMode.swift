@@ -26,10 +26,21 @@ struct PCModeRuleRowView: View {
                 .buttonStyle(.borderless)
             }
             
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 ForEach(0..<rule.mappings.count, id: \.self) { mappingIndex in
                     HStack(spacing: 8) {
-                        Text("Map").font(.caption).foregroundColor(.secondary).frame(width: 25, alignment: .leading)
+                        // Strict Toggle moved to the left
+                        Toggle("Strict", isOn: $rule.mappings[mappingIndex].isStrict)
+                            .toggleStyle(.checkbox)
+                            .font(.caption)
+                            .foregroundColor(rule.mappings[mappingIndex].isStrict ? .primary : .secondary)
+                            .controlSize(.small)
+                            .help("Strict Match: Ignores the action if any extra modifiers are pressed.")
+                            .fixedSize()
+                        
+                        Divider().frame(height: 14)
+                        
+                        Text("Map").font(.caption).foregroundColor(.secondary)
                         
                         TextField("e.g. ctrl + c", text: Binding(
                             get: { rule.mappings[mappingIndex].from },
@@ -44,19 +55,17 @@ struct PCModeRuleRowView: View {
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                             .frame(maxWidth: .infinity)
                             
-                        Toggle("Strict", isOn: $rule.mappings[mappingIndex].isStrict)
-                            .toggleStyle(.checkbox)
-                            .controlSize(.mini)
-                            .help("If checked, ignores the action if any extra modifiers are pressed.")
-                            
                         Button(action: { rule.mappings.remove(at: mappingIndex) }) {
                             Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                         }
                         .buttonStyle(.borderless)
+                        .padding(.leading, 2)
                     }
-                    .padding(6)
-                    .background(Color.gray.opacity(0.1))
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                    .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
                     .cornerRadius(6)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.gray.opacity(0.15), lineWidth: 1))
                 }
                 
                 Button(action: {

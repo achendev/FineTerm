@@ -2,51 +2,39 @@ import Cocoa
 import ApplicationServices
 import Foundation
 
-// Global variable to store start point
 var lastMouseDownPoint: CGPoint = .zero
-// Global variable for re-enabling tap
 private var globalMouseEventTap: CFMachPort?
 
 func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
-    
-    // 0. Handle Tap Disabled (CRITICAL FIX)
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         if let tap = globalMouseEventTap {
             CGEvent.tapEnable(tap: tap, enable: true)
-            if UserDefaults.standard.bool(forKey: "debugMode") {
-                print("DEBUG: Mouse Tap re-enabled after timeout/user input.")
-            }
         }
         return Unmanaged.passUnretained(event)
     }
     
-    // Safety Net: Prevent infinite loops from our own synthesized CGEvents
     if event.getIntegerValueField(CGEventField.eventSourceUserData) == magicEventSourceUserData {
         return Unmanaged.passUnretained(event)
     }
 
-    // 1. Scroll Mode Processing (With Physics & Tmux Support)
     if type == .mouseMoved || type == .leftMouseDragged || type == .rightMouseDragged || type == .otherMouseDragged {
         if ScrollModeManager.shared.isActive {
             let deltaY = Double(event.getIntegerValueField(.mouseEventDeltaY))
             let deltaX = Double(event.getIntegerValueField(.mouseEventDeltaX))
-            
             ScrollModeManager.shared.processMovement(deltaX: deltaX, deltaY: deltaY)
-            
-            return nil // Swallow mouse movement while scrolling
+            return nil 
         }
-        return Unmanaged.passUnretained(event) // Pass through if not active
+        return Unmanaged.passUnretained(event)
     }
     
-    // Trigger an immediate secure input check on any mouse click (to catch clicking into password fields)
     if type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown {
         SecureInputMonitor.shared.triggerActiveCheck()
     }
     
-    let frontApp = NSWorkspace.shared.frontmostApplication
-    let frontAppID = frontApp?.bundleIdentifier ?? ""
+    let getFrontAppID: () -> String = {
+        return NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+    }
     
-    // 2. Process PC Mode Rules for Mouse Buttons
     var virtualKeyCode: Int64? = nil
     var isMousePress: Bool? = nil
 
@@ -62,100 +50,66 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
 
     if let vk = virtualKeyCode, let press = isMousePress {
         let effectiveType: CGEventType = press ? .keyDown : .keyUp
-        let wasSwallowed = PCModeProcessor.shared.process(type: effectiveType, keyCode: vk, flags: event.flags, event: event, frontAppID: frontAppID)
+        let wasSwallowed = PCModeProcessor.shared.process(type: effectiveType, keyCode: vk, flags: event.flags, event: event, getFrontAppID: getFrontAppID)
         if wasSwallowed {
             return nil
         }
     }
     
     let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
+    let frontAppID = getFrontAppID()
     
-    // Check if Terminal is active (frontmost)
     guard frontAppID == target else {
         return Unmanaged.passUnretained(event)
     }
     
-    let isDebug = UserDefaults.standard.bool(forKey: "debugMode")
-    
-    // [001] Tahoe Compatibility Fix: Use AX API for Hit-Testing
     func isClickInTerminalWindow(_ point: CGPoint) -> Bool {
         guard let terminalApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == target }) else {
             return false
         }
         let terminalPID = terminalApp.processIdentifier
-        
         let systemWide = AXUIElementCreateSystemWide()
         var element: AXUIElement?
         
         let error = AXUIElementCopyElementAtPosition(systemWide, Float(point.x), Float(point.y), &element)
-        
         guard error == .success, let targetElement = element else {
-            if isDebug { print("DEBUG: AX Hit-Test failed or found nothing.") }
             return false
         }
 
         var elementPID: pid_t = 0
         let pidError = AXUIElementGetPid(targetElement, &elementPID)
-        
-        if pidError == .success && elementPID == terminalPID {
-            return true
-        } else {
-            if isDebug { 
-                print("DEBUG: Click blocked. Owner PID: \(elementPID) != Terminal PID: \(terminalPID)") 
-            }
-            return false
-        }
+        return pidError == .success && elementPID == terminalPID
     }
 
-    // 3. Handle Right Click -> Paste (Cmd+V)
     if type == .rightMouseDown {
         if UserDefaults.standard.bool(forKey: "pasteOnRightClick") {
-            if !isClickInTerminalWindow(event.location) {
-                if isDebug { print("DEBUG: Right click outside/obscured, ignoring.") }
-                return Unmanaged.passUnretained(event)
-            }
-            
-            if isDebug { print("DEBUG: Right Click detected. Pasting...") }
+            if !isClickInTerminalWindow(event.location) { return Unmanaged.passUnretained(event) }
             
             let source = CGEventSource(stateID: .hidSystemState)
-            let vKey: CGKeyCode = 9 // 'v'
+            let vKey: CGKeyCode = 9 
             
             if let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
                let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false) {
-                
                 cmdDown.flags = .maskCommand
                 cmdUp.flags = .maskCommand
-                
                 cmdDown.setIntegerValueField(CGEventField.eventSourceUserData, value: magicEventSourceUserData)
                 cmdUp.setIntegerValueField(CGEventField.eventSourceUserData, value: magicEventSourceUserData)
-                
                 cmdDown.post(tap: CGEventTapLocation.cghidEventTap)
                 cmdUp.post(tap: CGEventTapLocation.cghidEventTap)
             }
-            return nil // Swallow the right click
+            return nil
         }
         return Unmanaged.passUnretained(event)
     }
     
-    // 4. Track Mouse Down
     if type == .leftMouseDown {
-        if isClickInTerminalWindow(event.location) {
-            lastMouseDownPoint = event.location
-        } else {
-            lastMouseDownPoint = .zero
-        }
+        if isClickInTerminalWindow(event.location) { lastMouseDownPoint = event.location } else { lastMouseDownPoint = .zero }
         return Unmanaged.passUnretained(event)
     }
     
-    // 5. Handle Left Mouse Up -> Copy (Cmd+C)
     if type == .leftMouseUp {
-        if !UserDefaults.standard.bool(forKey: "copyOnSelect") {
-             return Unmanaged.passUnretained(event)
-        }
-        
-        if lastMouseDownPoint == .zero {
-            return Unmanaged.passUnretained(event)
-        }
+        if !UserDefaults.standard.bool(forKey: "copyOnSelect") { return Unmanaged.passUnretained(event) }
+        if lastMouseDownPoint == .zero { return Unmanaged.passUnretained(event) }
 
         let currentPoint = event.location
         let dist = hypot(currentPoint.x - lastMouseDownPoint.x, currentPoint.y - lastMouseDownPoint.y)
@@ -165,38 +119,24 @@ func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
         lastMouseDownPoint = .zero
         
         if dist > 5.0 || clickCount >= 2 || isShiftDown {
-            if isDebug {
-                print("DEBUG: Selection Detected (Drag: \(Int(dist))px, Clicks: \(clickCount), Shift: \(isShiftDown)). Queuing Copy...")
-            }
-            
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
                 if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == target {
-                    
                     let source = CGEventSource(stateID: .hidSystemState)
-                    let cKey: CGKeyCode = 8 // 'c'
-                    
+                    let cKey: CGKeyCode = 8 
                     if let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: cKey, keyDown: true),
                        let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: cKey, keyDown: false) {
-                        
                         cmdDown.flags = .maskCommand
                         cmdUp.flags = .maskCommand
-                        
                         cmdDown.setIntegerValueField(CGEventField.eventSourceUserData, value: magicEventSourceUserData)
                         cmdUp.setIntegerValueField(CGEventField.eventSourceUserData, value: magicEventSourceUserData)
-                        
                         cmdDown.post(tap: CGEventTapLocation.cghidEventTap)
                         cmdUp.post(tap: CGEventTapLocation.cghidEventTap)
-                        
-                        if UserDefaults.standard.bool(forKey: "debugMode") {
-                            print("DEBUG: Cmd+C sent.")
-                        }
                     }
                 }
             }
         }
         return Unmanaged.passUnretained(event)
     }
-
     return Unmanaged.passUnretained(event)
 }
 
@@ -206,47 +146,32 @@ class MouseInterceptor {
 
     func start() {
         let types: [CGEventType] = [
-            .leftMouseDown, .leftMouseUp,
-            .rightMouseDown, .rightMouseUp,
-            .otherMouseDown, .otherMouseUp,
-            .mouseMoved, .leftMouseDragged,
+            .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
+            .otherMouseDown, .otherMouseUp, .mouseMoved, .leftMouseDragged,
             .rightMouseDragged, .otherMouseDragged
         ]
         var mask: UInt64 = 0
-        for t in types {
-            mask |= (UInt64(1) << t.rawValue)
-        }
+        for t in types { mask |= (UInt64(1) << t.rawValue) }
         
         guard let tap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: CGEventMask(mask),
-            callback: eventTapCallback,
-            userInfo: nil
-        ) else {
-            print("FATAL ERROR: Failed to create Event Tap. Check Accessibility Permissions.")
-            return
-        }
+            tap: .cghidEventTap, place: .headInsertEventTap, options: .defaultTap,
+            eventsOfInterest: CGEventMask(mask), callback: eventTapCallback, userInfo: nil
+        ) else { return }
 
         self.eventTap = tap
         globalMouseEventTap = tap
-        
         self.runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         
         if let rls = self.runLoopSource {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
-            print("Mouse Hook Active.")
         }
     }
 
     func stop() {
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
-            if let rls = runLoopSource {
-                CFRunLoopRemoveSource(CFRunLoopGetCurrent(), rls, .commonModes)
-            }
+            if let rls = runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), rls, .commonModes) }
         }
         globalMouseEventTap = nil
     }

@@ -90,90 +90,64 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return nil 
     }
     
-    // Trigger an immediate secure input check on Enter / Numpad Enter (to catch submitting forms)
     if effectiveType == .keyDown && (effectiveKeyCode == 36 || effectiveKeyCode == 76) {
         SecureInputMonitor.shared.triggerActiveCheck()
     }
     
     let isKeyDownOrUp = effectiveType == .keyDown || effectiveType == .keyUp || effectiveType == .flagsChanged
     let flags = event.flags
-    let frontApp = WindowCycleService.getRealFrontmostApp()
     
-    let engine = UserDefaults.standard.integer(forKey: AppConfig.Keys.pcModeEngine)
+    let cache = KeyboardCache.shared
+    let engine = cache.pcModeEngine
+    
+    // Lazy Evaluation ensures we don't spam IPC CGWindowList checks unless a specific rule requests it
+    var lazyFrontAppID: String? = nil
+    let getFrontAppID: () -> String = {
+        if let id = lazyFrontAppID { return id }
+        let app = WindowCycleService.getRealFrontmostApp()
+        let id = app?.bundleIdentifier ?? ""
+        lazyFrontAppID = id
+        return id
+    }
     
     if isKeyDownOrUp {
-        let frontAppID = frontApp?.bundleIdentifier ?? ""
-        let wasSwallowed = PCModeProcessor.shared.process(type: effectiveType, keyCode: effectiveKeyCode, flags: flags, event: event, frontAppID: frontAppID)
-        if wasSwallowed {
-            return nil
-        }
+        // FIXED: Removed the faulty `if engine == 0` wrapper! 
+        // PCModeProcessor gracefully handles the engine check internally to support Hybrid Mode natively.
+        let wasSwallowed = PCModeProcessor.shared.process(type: effectiveType, keyCode: effectiveKeyCode, flags: flags, event: event, getFrontAppID: getFrontAppID)
+        if wasSwallowed { return nil }
     }
     
     guard effectiveType == .keyDown || effectiveType == .flagsChanged else {
         return Unmanaged.passUnretained(event)
     }
     
-    // If Karabiner is active (Full or Hybrid), it ALWAYS handles global shortcuts unconditionally via karabiner.json
+    // If Karabiner is active (Full or Hybrid), it ALWAYS handles global shortcuts via karabiner.json
     if engine > 0 {
         return Unmanaged.passUnretained(event)
     }
     
-    let defaults = UserDefaults.standard
+    let isNextMatch = cache.enableNextGroupShortcut && cache.nextGroupTriggers.contains { $0.matches(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags) }
+    let isPrevMatch = cache.enablePrevGroupShortcut && cache.prevGroupTriggers.contains { $0.matches(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags) }
+    let isToggleGroupMatch = cache.enableToggleGroupShortcut && cache.toggleGroupTriggers.contains { $0.matches(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags) }
     
-    let isNextMatch = defaults.bool(forKey: AppConfig.Keys.enableNextGroupShortcut) &&
-        KeyboardMatcher.isAnyTriggerMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags, triggers: KeyboardCache.shared.nextGroupTriggers)
-                              
-    let isPrevMatch = defaults.bool(forKey: AppConfig.Keys.enablePrevGroupShortcut) &&
-        KeyboardMatcher.isAnyTriggerMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags, triggers: KeyboardCache.shared.prevGroupTriggers)
-
-    let isToggleGroupMatch = defaults.bool(forKey: AppConfig.Keys.enableToggleGroupShortcut) &&
-        KeyboardMatcher.isAnyTriggerMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags, triggers: KeyboardCache.shared.toggleGroupTriggers)
-    
-    var matchedCustomShortcut: CustomAppShortcut?
-    for shortcut in KeyboardCache.shared.customShortcuts {
-        if !shortcut.isEnabled { continue }
-        let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
-        if validBundleIDs.isEmpty { continue }
-        if KeyboardMatcher.isAnyTriggerMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags, triggers: shortcut.triggers) {
+    var matchedCustomShortcut: ParsedCustomAppShortcut?
+    for shortcut in cache.customShortcuts {
+        if shortcut.triggers.contains(where: { $0.matches(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags) }) {
             matchedCustomShortcut = shortcut
             break
         }
     }
     
-    let isMainMatch = KeyboardMatcher.isGlobalShortcutMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags,
-                                            keyStr: defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n",
-                                            mod1Str: defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command",
-                                            mod2Str: nil)
-                                            
-    let isToggleMatch = defaults.bool(forKey: AppConfig.Keys.enableTerminalToggleShortcut) &&
-                        KeyboardMatcher.isGlobalShortcutMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags,
-                                            keyStr: defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutKey) ?? "h",
-                                            mod1Str: defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutModifier) ?? "command",
-                                            mod2Str: nil)
-                                            
-    let isClipMatch = defaults.bool(forKey: AppConfig.Keys.enableClipboardManager) &&
-                      KeyboardMatcher.isGlobalShortcutMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags,
-                                            keyStr: defaults.string(forKey: AppConfig.Keys.clipboardShortcutKey) ?? "u",
-                                            mod1Str: defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command",
-                                            mod2Str: nil)
-
-    let isLibraryAddMatch = defaults.bool(forKey: AppConfig.Keys.enableLibraryManager) &&
-                      KeyboardMatcher.isGlobalShortcutMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags,
-                                            keyStr: defaults.string(forKey: AppConfig.Keys.libraryAddShortcutKey) ?? "n",
-                                            mod1Str: defaults.string(forKey: AppConfig.Keys.libraryAddShortcutModifier) ?? "option",
-                                            mod2Str: nil)
-                                            
-    let isLibraryOpenMatch = defaults.bool(forKey: AppConfig.Keys.enableLibraryManager) &&
-                      KeyboardMatcher.isGlobalShortcutMatch(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags,
-                                            keyStr: defaults.string(forKey: AppConfig.Keys.libraryOpenShortcutKey) ?? "m",
-                                            mod1Str: defaults.string(forKey: AppConfig.Keys.libraryOpenShortcutModifier) ?? "option",
-                                            mod2Str: nil)
+    let isMainMatch = cache.mainShortcut?.matches(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags) ?? false
+    let isToggleMatch = cache.enableTerminalToggleShortcut && (cache.terminalToggleShortcut?.matches(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags) ?? false)
+    let isClipMatch = cache.enableClipboardManager && (cache.clipboardShortcut?.matches(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags) ?? false)
+    let isLibraryAddMatch = cache.enableLibraryManager && (cache.libraryAddShortcut?.matches(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags) ?? false)
+    let isLibraryOpenMatch = cache.enableLibraryManager && (cache.libraryOpenShortcut?.matches(type: effectiveType, eventKeyCode: effectiveKeyCode, flags: flags) ?? false)
     
     if !isNextMatch && !isPrevMatch && !isToggleGroupMatch && matchedCustomShortcut == nil && !isMainMatch && !isToggleMatch && !isClipMatch && !isLibraryAddMatch && !isLibraryOpenMatch {
         return Unmanaged.passUnretained(event)
     }
     
-    // Trigger an immediate secure input check on any shortcut execution (to catch switching into password fields)
     if isNextMatch || isPrevMatch || isToggleGroupMatch {
         SecureInputMonitor.shared.triggerActiveCheck()
         DispatchQueue.main.async { WindowCycleService.executeCycle(isNext: isNextMatch, isPrev: isPrevMatch, isToggle: isToggleGroupMatch) }

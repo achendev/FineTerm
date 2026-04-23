@@ -10,9 +10,9 @@ class PCModeProcessor {
         activeRemaps.removeAll()
     }
     
-    func process(type: CGEventType, keyCode: Int64, flags: CGEventFlags, event: CGEvent, frontAppID: String) -> Bool {
-        // 1. Check if Engine disables Internal Processing
-        let engine = UserDefaults.standard.integer(forKey: AppConfig.Keys.pcModeEngine)
+    func process(type: CGEventType, keyCode: Int64, flags: CGEventFlags, event: CGEvent, getFrontAppID: () -> String) -> Bool {
+        // Optimized to use memory cache instead of hitting disk via UserDefaults
+        let engine = KeyboardCache.shared.pcModeEngine
         if engine == 1 { return false }
         if engine == 2 && SecureInputMonitor.shared.isSecureInputEnabled { return false }
         
@@ -50,8 +50,6 @@ class PCModeProcessor {
                         if let down = CGEvent(keyboardEventSource: source, virtualKey: rawKeyCode, keyDown: true),
                            let up = CGEvent(keyboardEventSource: source, virtualKey: rawKeyCode, keyDown: false) {
                             
-                            // Re-apply original modifiers that triggered the hold action,
-                            // ensuring we accurately recreate the "to_if_alone" semantic.
                             down.flags = mappedFlags
                             up.flags = mappedFlags
                             
@@ -95,8 +93,11 @@ class PCModeProcessor {
         let originalFlags = flags
         
         for parsedRule in KeyboardCache.shared.pcRules {
-            if parsedRule.rule.appFilterMode == .include && !parsedRule.rule.appBundleIDs.contains(frontAppID) { continue }
-            if parsedRule.rule.appFilterMode == .exclude && parsedRule.rule.appBundleIDs.contains(frontAppID) { continue }
+            if parsedRule.rule.appFilterMode != .none {
+                let frontAppID = getFrontAppID()
+                if parsedRule.rule.appFilterMode == .include && !parsedRule.rule.appBundleIDs.contains(frontAppID) { continue }
+                if parsedRule.rule.appFilterMode == .exclude && parsedRule.rule.appBundleIDs.contains(frontAppID) { continue }
+            }
             
             for map in parsedRule.mappings {
                 if PCModeRuleMatcher.match(map: map, rawKeyCode: rawKeyCode, originalFlags: originalFlags, isFlagsChanged: isFlagsChanged) {

@@ -2,7 +2,6 @@ import CoreGraphics
 import Foundation
 
 struct KeyboardParser {
-    // Maps NX_KEYTYPE media keys to standard F-key keycodes
     static let mediaKeyToFKey: [Int32: CGKeyCode] = [
         0: 111,  // VolUp -> F12
         1: 103,  // VolDown -> F11
@@ -55,7 +54,6 @@ struct KeyboardParser {
         "`": 50, "grave_accent_and_tilde": 50
     ]
     
-    // Custom split function that prevents commas from splitting if they are used as a key
     static func splitActions(_ input: String) -> [String] {
         let cleanedInput = input.components(separatedBy: .controlCharacters).joined()
         var actions: [String] = []
@@ -73,13 +71,11 @@ struct KeyboardParser {
                 continue
             }
             if char == "," && !expectsKey {
-                // Valid separator
                 actions.append(currentAction)
                 currentAction = ""
                 expectsKey = true
                 continue
             }
-            
             expectsKey = false
             currentAction.append(char)
         }
@@ -91,7 +87,6 @@ struct KeyboardParser {
 
     static func getKeyCode(for char: String) -> CGKeyCode? {
         let lower = char.lowercased().trimmingCharacters(in: .whitespaces)
-                        
         if let code = specialKeyCodes[lower] { return code }
         
         switch lower {
@@ -144,15 +139,50 @@ struct KeyboardParser {
                 case "ropt", "right_option", "ralt": coreFlags.insert(.maskAlternate); strictFlags.append("right_option")
                 case "lshift", "left_shift": coreFlags.insert(.maskShift); strictFlags.append("left_shift")
                 case "rshift", "right_shift": coreFlags.insert(.maskShift); strictFlags.append("right_shift")
-                default: 
-                    if UserDefaults.standard.bool(forKey: "debugMode") {
-                        print("DEBUG: [KeyboardParser] FAILED to parse modifier '\(mod)' in rule '\(input)'")
-                    }
-                    return ([], [], "") 
+                default: return ([], [], "") 
                 }
             }
         }
-        
         return (coreFlags, strictFlags, key)
+    }
+
+    static func parseShortcutTrigger(_ trigger: ShortcutTrigger) -> ParsedShortcutTrigger? {
+        let keyStr = trigger.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let keyCode = keyStr.isEmpty ? nil : getKeyCode(for: keyStr)
+        
+        if !keyStr.isEmpty && keyCode == nil { return nil }
+        
+        var coreFlags: CGEventFlags = []
+        var strictFlags: [String] = []
+        
+        let mods = [trigger.modifier, trigger.modifier2 ?? "none"].map { $0.replacingOccurrences(of: " ", with: "_").lowercased() }
+        
+        for mod in mods {
+            if mod == "none" || mod.isEmpty { continue }
+            switch mod {
+            case "cmd", "command": coreFlags.insert(.maskCommand)
+            case "ctrl", "control": coreFlags.insert(.maskControl)
+            case "opt", "alt", "option": coreFlags.insert(.maskAlternate)
+            case "shift": coreFlags.insert(.maskShift)
+            case "fn", "globe": coreFlags.insert(.maskSecondaryFn)
+            case "capslock", "caps_lock": coreFlags.insert(.maskAlphaShift)
+            
+            case "lcmd", "left_command": coreFlags.insert(.maskCommand); strictFlags.append("left_command")
+            case "rcmd", "right_command": coreFlags.insert(.maskCommand); strictFlags.append("right_command")
+            case "lctrl", "left_control": coreFlags.insert(.maskControl); strictFlags.append("left_control")
+            case "rctrl", "right_control": coreFlags.insert(.maskControl); strictFlags.append("right_control")
+            case "lopt", "left_option", "lalt": coreFlags.insert(.maskAlternate); strictFlags.append("left_option")
+            case "ropt", "right_option", "ralt": coreFlags.insert(.maskAlternate); strictFlags.append("right_option")
+            case "lshift", "left_shift": coreFlags.insert(.maskShift); strictFlags.append("left_shift")
+            case "rshift", "right_shift": coreFlags.insert(.maskShift); strictFlags.append("right_shift")
+            default: break
+            }
+        }
+        
+        if keyCode == nil {
+            if strictFlags.isEmpty { return nil }
+        }
+        
+        return ParsedShortcutTrigger(keyCode: keyCode, coreFlags: coreFlags, strictFlags: strictFlags)
     }
 }

@@ -3,11 +3,27 @@ import Foundation
 class KeyboardCache {
     static let shared = KeyboardCache()
     
-    var customShortcuts: [CustomAppShortcut] = []
+    // Pre-Parsed Shortcut Triggers
+    var customShortcuts: [ParsedCustomAppShortcut] = []
     var pcRules: [ParsedPCModeRule] = []
-    var nextGroupTriggers: [ShortcutTrigger] = []
-    var prevGroupTriggers: [ShortcutTrigger] = []
-    var toggleGroupTriggers: [ShortcutTrigger] = []
+    var nextGroupTriggers: [ParsedShortcutTrigger] = []
+    var prevGroupTriggers: [ParsedShortcutTrigger] = []
+    var toggleGroupTriggers: [ParsedShortcutTrigger] = []
+    
+    var mainShortcut: ParsedShortcutTrigger?
+    var terminalToggleShortcut: ParsedShortcutTrigger?
+    var clipboardShortcut: ParsedShortcutTrigger?
+    var libraryAddShortcut: ParsedShortcutTrigger?
+    var libraryOpenShortcut: ParsedShortcutTrigger?
+
+    // Settings Cache
+    var enableNextGroupShortcut = false
+    var enablePrevGroupShortcut = false
+    var enableToggleGroupShortcut = false
+    var enableTerminalToggleShortcut = false
+    var enableClipboardManager = false
+    var enableLibraryManager = false
+    var pcModeEngine = 0
     
     private var userDefaultsObserver: NSObjectProtocol?
     
@@ -32,13 +48,51 @@ class KeyboardCache {
     
     private func refresh() {
         let isDebug = UserDefaults.standard.bool(forKey: "debugMode")
-        if isDebug { print("DEBUG: [KeyboardCache] Refreshing internal rule cache...") }
+        if isDebug { print("DEBUG: [KeyboardCache] Rebuilding and parsing internal rule cache...") }
         
-        if let data = UserDefaults.standard.data(forKey: AppConfig.Keys.customAppShortcuts),
+        let defaults = UserDefaults.standard
+        pcModeEngine = defaults.integer(forKey: AppConfig.Keys.pcModeEngine)
+        enableNextGroupShortcut = defaults.bool(forKey: AppConfig.Keys.enableNextGroupShortcut)
+        enablePrevGroupShortcut = defaults.bool(forKey: AppConfig.Keys.enablePrevGroupShortcut)
+        enableToggleGroupShortcut = defaults.bool(forKey: AppConfig.Keys.enableToggleGroupShortcut)
+        enableTerminalToggleShortcut = defaults.bool(forKey: AppConfig.Keys.enableTerminalToggleShortcut)
+        enableClipboardManager = defaults.bool(forKey: AppConfig.Keys.enableClipboardManager)
+        enableLibraryManager = defaults.bool(forKey: AppConfig.Keys.enableLibraryManager)
+
+        mainShortcut = KeyboardParser.parseShortcutTrigger(ShortcutTrigger(
+            key: defaults.string(forKey: AppConfig.Keys.globalShortcutKey) ?? "n",
+            modifier: defaults.string(forKey: AppConfig.Keys.globalShortcutModifier) ?? "command"
+        ))
+        
+        terminalToggleShortcut = KeyboardParser.parseShortcutTrigger(ShortcutTrigger(
+            key: defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutKey) ?? "h",
+            modifier: defaults.string(forKey: AppConfig.Keys.terminalToggleShortcutModifier) ?? "command"
+        ))
+        
+        clipboardShortcut = KeyboardParser.parseShortcutTrigger(ShortcutTrigger(
+            key: defaults.string(forKey: AppConfig.Keys.clipboardShortcutKey) ?? "u",
+            modifier: defaults.string(forKey: AppConfig.Keys.clipboardShortcutModifier) ?? "command"
+        ))
+        
+        libraryAddShortcut = KeyboardParser.parseShortcutTrigger(ShortcutTrigger(
+            key: defaults.string(forKey: AppConfig.Keys.libraryAddShortcutKey) ?? "n",
+            modifier: defaults.string(forKey: AppConfig.Keys.libraryAddShortcutModifier) ?? "option"
+        ))
+        
+        libraryOpenShortcut = KeyboardParser.parseShortcutTrigger(ShortcutTrigger(
+            key: defaults.string(forKey: AppConfig.Keys.libraryOpenShortcutKey) ?? "m",
+            modifier: defaults.string(forKey: AppConfig.Keys.libraryOpenShortcutModifier) ?? "option"
+        ))
+
+        self.customShortcuts = []
+        if let data = defaults.data(forKey: AppConfig.Keys.customAppShortcuts),
            let shortcuts = try? JSONDecoder().decode([CustomAppShortcut].self, from: data) {
-            self.customShortcuts = shortcuts
-        } else {
-            self.customShortcuts = []
+            for s in shortcuts where s.isEnabled {
+                let parsedTriggers = s.triggers.compactMap { KeyboardParser.parseShortcutTrigger($0) }
+                if !parsedTriggers.isEmpty {
+                    self.customShortcuts.append(ParsedCustomAppShortcut(id: s.id, bundleIDs: s.bundleIDs, triggers: parsedTriggers))
+                }
+            }
         }
         
         var newPCRules: [ParsedPCModeRule] = []
@@ -50,14 +104,8 @@ class KeyboardCache {
                     var parsedMappings: [ParsedKeyMap] = []
                     for map in rule.mappings {
                         let fromParsed = KeyboardParser.parseKeyString(map.from)
-                        guard !fromParsed.key.isEmpty else { 
-                            if isDebug { print("DEBUG: [KeyboardCache] ERROR: Skipping '\(map.from)' -> fromKey is empty") }
-                            continue 
-                        }
-                        guard let fromCode = KeyboardParser.getKeyCode(for: fromParsed.key) else { 
-                            if isDebug { print("DEBUG: [KeyboardCache] ERROR: Skipping '\(map.from)' -> Unknown KeyCode for '\(fromParsed.key)'") }
-                            continue 
-                        }
+                        guard !fromParsed.key.isEmpty else { continue }
+                        guard let fromCode = KeyboardParser.getKeyCode(for: fromParsed.key) else { continue }
                         
                         var isShell = false
                         var shellCommand: String? = nil
@@ -81,7 +129,6 @@ class KeyboardCache {
                             let text = String(map.to[cmdStartIndex...])
                             typeText = text.hasPrefix(" ") ? String(text.dropFirst()) : text
                         } else {
-                            // FIX: Using custom safe split function instead of simple .components(separatedBy: ",")
                             let parts = KeyboardParser.splitActions(map.to)
                             for part in parts {
                                 let toParsed = KeyboardParser.parseKeyString(part)
@@ -89,14 +136,7 @@ class KeyboardCache {
                                 guard let code = KeyboardParser.getKeyCode(for: toParsed.key) else { continue }
                                 toActions.append(ParsedToAction(keyCode: code, coreFlags: toParsed.coreFlags))
                             }
-                            if toActions.isEmpty { 
-                                if isDebug { print("DEBUG: [KeyboardCache] ERROR: Skipping '\(map.from)' -> Unable to parse 'to' field: '\(map.to)'") }
-                                continue 
-                            }
-                        }
-                        
-                        if isDebug {
-                            print("DEBUG: [KeyboardCache] Loaded successfully: '\(map.from)' (Code: \(fromCode), Flags: \(fromParsed.coreFlags.rawValue))")
+                            if toActions.isEmpty { continue }
                         }
                         
                         parsedMappings.append(ParsedKeyMap(
@@ -123,11 +163,11 @@ class KeyboardCache {
             }
         }
         self.pcRules = newPCRules
-        if isDebug { print("DEBUG: [KeyboardCache] Finished refreshing. Total Active PC Rule Groups loaded: \(self.pcRules.count)") }
+        if isDebug { print("DEBUG: [KeyboardCache] Finished parsing. Active PC Groups: \(self.pcRules.count)") }
         
-        self.nextGroupTriggers = loadTriggers(forKey: AppConfig.Keys.nextGroupTriggers, oldMod1: AppConfig.Keys.nextGroupModifier, oldMod2: AppConfig.Keys.nextGroupModifier2, oldKey: AppConfig.Keys.nextGroupKey, defaultKey: ".")
-        self.prevGroupTriggers = loadTriggers(forKey: AppConfig.Keys.prevGroupTriggers, oldMod1: AppConfig.Keys.prevGroupModifier, oldMod2: AppConfig.Keys.prevGroupModifier2, oldKey: AppConfig.Keys.prevGroupKey, defaultKey: ",")
-        self.toggleGroupTriggers = loadTriggers(forKey: AppConfig.Keys.toggleGroupTriggers, oldMod1: AppConfig.Keys.toggleGroupModifier, oldMod2: AppConfig.Keys.toggleGroupModifier2, oldKey: AppConfig.Keys.toggleGroupKey, defaultKey: "/")
+        self.nextGroupTriggers = loadTriggers(forKey: AppConfig.Keys.nextGroupTriggers, oldMod1: AppConfig.Keys.nextGroupModifier, oldMod2: AppConfig.Keys.nextGroupModifier2, oldKey: AppConfig.Keys.nextGroupKey, defaultKey: ".").compactMap { KeyboardParser.parseShortcutTrigger($0) }
+        self.prevGroupTriggers = loadTriggers(forKey: AppConfig.Keys.prevGroupTriggers, oldMod1: AppConfig.Keys.prevGroupModifier, oldMod2: AppConfig.Keys.prevGroupModifier2, oldKey: AppConfig.Keys.prevGroupKey, defaultKey: ",").compactMap { KeyboardParser.parseShortcutTrigger($0) }
+        self.toggleGroupTriggers = loadTriggers(forKey: AppConfig.Keys.toggleGroupTriggers, oldMod1: AppConfig.Keys.toggleGroupModifier, oldMod2: AppConfig.Keys.toggleGroupModifier2, oldKey: AppConfig.Keys.toggleGroupKey, defaultKey: "/").compactMap { KeyboardParser.parseShortcutTrigger($0) }
     }
     
     private func loadTriggers(forKey key: String, oldMod1: String, oldMod2: String, oldKey: String, defaultKey: String) -> [ShortcutTrigger] {

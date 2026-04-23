@@ -83,7 +83,7 @@ struct WindowCycleService {
             currentIdx = validShortcuts.firstIndex(where: { $0.id == lastUsedShortcutID }) ?? -1
         }
         
-        var target: CustomAppShortcut?
+        var target: ParsedCustomAppShortcut?
         if isNext {
             let baseIdx = currentIdx == -1 ? -1 : currentIdx
             target = validShortcuts[(baseIdx + 1) % validShortcuts.count]
@@ -102,7 +102,7 @@ struct WindowCycleService {
     }
 
     static func executeCustomShortcut(by id: UUID) {
-        if let shortcut = KeyboardCache.shared.customShortcuts.first(where: { $0.id == id && $0.isEnabled }) {
+        if let shortcut = KeyboardCache.shared.customShortcuts.first(where: { $0.id == id }) {
             lastUsedShortcutID = shortcut.id
             let validBundleIDs = shortcut.bundleIDs.filter { !$0.isEmpty }
             executeCustomShortcutCycle(validBundleIDs: validBundleIDs, frontApp: getRealFrontmostApp())
@@ -146,10 +146,10 @@ struct WindowCycleService {
         }
     }
     
-    static func getActivatableShortcuts() -> [CustomAppShortcut] {
+    static func getActivatableShortcuts() -> [ParsedCustomAppShortcut] {
         let workspace = NSWorkspace.shared
         let runningIDs = Set(workspace.runningApplications.compactMap { $0.bundleIdentifier })
-        let validShortcuts = KeyboardCache.shared.customShortcuts.filter { $0.isEnabled && $0.bundleIDs.contains(where: { !$0.isEmpty }) }
+        let validShortcuts = KeyboardCache.shared.customShortcuts.filter { $0.bundleIDs.contains(where: { !$0.isEmpty }) }
         
         let skipNonRunning = UserDefaults.standard.bool(forKey: AppConfig.Keys.skipNonRunningApps)
         let skipMode = UserDefaults.standard.integer(forKey: AppConfig.Keys.skipNonRunningAppsMode)

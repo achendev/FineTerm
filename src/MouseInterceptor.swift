@@ -6,24 +6,16 @@ var lastMouseDownPoint: CGPoint = .zero
 private var globalMouseEventTap: CFMachPort?
 
 func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
-    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+    if type == .tapDisabledByTimeout {
         if let tap = globalMouseEventTap {
             CGEvent.tapEnable(tap: tap, enable: true)
         }
         return Unmanaged.passUnretained(event)
+    } else if type == .tapDisabledByUserInput {
+        return Unmanaged.passUnretained(event)
     }
     
     if event.getIntegerValueField(CGEventField.eventSourceUserData) == magicEventSourceUserData {
-        return Unmanaged.passUnretained(event)
-    }
-
-    if type == .mouseMoved || type == .leftMouseDragged || type == .rightMouseDragged || type == .otherMouseDragged {
-        if ScrollModeManager.shared.isActive {
-            let deltaY = Double(event.getIntegerValueField(.mouseEventDeltaY))
-            let deltaX = Double(event.getIntegerValueField(.mouseEventDeltaX))
-            ScrollModeManager.shared.processMovement(deltaX: deltaX, deltaY: deltaY)
-            return nil 
-        }
         return Unmanaged.passUnretained(event)
     }
     
@@ -147,8 +139,7 @@ class MouseInterceptor {
     func start() {
         let types: [CGEventType] = [
             .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
-            .otherMouseDown, .otherMouseUp, .mouseMoved, .leftMouseDragged,
-            .rightMouseDragged, .otherMouseDragged
+            .otherMouseDown, .otherMouseUp
         ]
         var mask: UInt64 = 0
         for t in types { mask |= (UInt64(1) << t.rawValue) }

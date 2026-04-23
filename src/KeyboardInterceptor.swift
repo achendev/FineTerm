@@ -55,8 +55,10 @@ class KeyboardInterceptor {
 }
 
 func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
-    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+    if type == .tapDisabledByTimeout {
         if let tap = globalKeyboardEventTap { CGEvent.tapEnable(tap: tap, enable: true) }
+        return Unmanaged.passUnretained(event)
+    } else if type == .tapDisabledByUserInput {
         return Unmanaged.passUnretained(event)
     }
     
@@ -111,8 +113,6 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
     }
     
     if isKeyDownOrUp {
-        // FIXED: Removed the faulty `if engine == 0` wrapper! 
-        // PCModeProcessor gracefully handles the engine check internally to support Hybrid Mode natively.
         let wasSwallowed = PCModeProcessor.shared.process(type: effectiveType, keyCode: effectiveKeyCode, flags: flags, event: event, getFrontAppID: getFrontAppID)
         if wasSwallowed { return nil }
     }
@@ -121,7 +121,6 @@ func keyboardEventCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGE
         return Unmanaged.passUnretained(event)
     }
     
-    // If Karabiner is active (Full or Hybrid), it ALWAYS handles global shortcuts via karabiner.json
     if engine > 0 {
         return Unmanaged.passUnretained(event)
     }

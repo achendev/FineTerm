@@ -1,6 +1,34 @@
 import Cocoa
 import CoreGraphics
 
+private var globalScrollMovementTap: CFMachPort?
+
+func scrollMovementCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
+    // 1. Differentiate between System Timeout and programmatic Disable
+    if type == .tapDisabledByTimeout {
+        if ScrollModeManager.shared.isActive, let tap = globalScrollMovementTap {
+            CGEvent.tapEnable(tap: tap, enable: true)
+        }
+        return Unmanaged.passUnretained(event)
+    } else if type == .tapDisabledByUserInput {
+        // We explicitly disabled this tap. DO NOT re-enable it.
+        return Unmanaged.passUnretained(event)
+    }
+    
+    // 2. Failsafe: Never swallow mouse events if we aren't active
+    if !ScrollModeManager.shared.isActive {
+        return Unmanaged.passUnretained(event)
+    }
+    
+    if type == .mouseMoved || type == .leftMouseDragged || type == .rightMouseDragged || type == .otherMouseDragged {
+        let deltaY = Double(event.getIntegerValueField(.mouseEventDeltaY))
+        let deltaX = Double(event.getIntegerValueField(.mouseEventDeltaX))
+        ScrollModeManager.shared.processMovement(deltaX: deltaX, deltaY: deltaY)
+        return nil // Swallow event to lock cursor visually
+    }
+    return Unmanaged.passUnretained(event)
+}
+
 enum ScrollPhase: Int64 {
     case began = 1
     case changed = 2
@@ -27,6 +55,28 @@ class ScrollModeManager {
     private var isScrollPhaseActive = false
     private var isMomentumPhaseActive = false
     
+    private func setupTapIfNeeded() {
+        if globalScrollMovementTap != nil { return }
+        
+        let mask: UInt64 = (1 << CGEventType.mouseMoved.rawValue) | (1 << CGEventType.leftMouseDragged.rawValue) | (1 << CGEventType.rightMouseDragged.rawValue) | (1 << CGEventType.otherMouseDragged.rawValue)
+        
+        guard let tap = CGEvent.tapCreate(
+            tap: .cghidEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: CGEventMask(mask),
+            callback: scrollMovementCallback,
+            userInfo: nil
+        ) else { return }
+        
+        globalScrollMovementTap = tap
+        let rls = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, .commonModes)
+        
+        // Disabled immediately on creation to prevent baseline CPU load
+        CGEvent.tapEnable(tap: tap, enable: false)
+    }
+    
     var isActive: Bool {
         get { return _isActive }
         set {
@@ -34,6 +84,8 @@ class ScrollModeManager {
                 _isActive = newValue
                 if newValue {
                     // Activation: Lock anchor and reset physics
+                    setupTapIfNeeded()
+                    if let tap = globalScrollMovementTap { CGEvent.tapEnable(tap: tap, enable: true) }
                     
                     // CRITICAL FIX: Terminal apps track modifier state internally.
                     // We must explicitly tell the focused app that all modifiers were released,
@@ -58,6 +110,7 @@ class ScrollModeManager {
                     hasScrolledSinceActive = false
                 } else {
                     // Deactivation: Modifier released.
+                    if let tap = globalScrollMovementTap { CGEvent.tapEnable(tap: tap, enable: false) }
                     
                     // Restore the actual physical modifier state to the focused app
                     syncTargetModifierState(clear: false)

@@ -4,8 +4,8 @@ import CoreGraphics
 enum ScrollPhase: Int64 {
     case began = 1
     case changed = 2
-    case ended = 3
-    case cancelled = 4
+    case ended = 4
+    case cancelled = 8
 }
 
 class ScrollModeManager {
@@ -34,6 +34,12 @@ class ScrollModeManager {
                 _isActive = newValue
                 if newValue {
                     // Activation: Lock anchor and reset physics
+                    
+                    // CRITICAL FIX: Terminal apps track modifier state internally.
+                    // We must explicitly tell the focused app that all modifiers were released,
+                    // otherwise it will apply its memory of the physical 'Shift' state to our virtual scrolls.
+                    syncTargetModifierState(clear: true)
+                    
                     stopInertia()
                     
                     // Failsafe end previous phase if it was somehow stuck
@@ -52,10 +58,33 @@ class ScrollModeManager {
                     hasScrolledSinceActive = false
                 } else {
                     // Deactivation: Modifier released.
+                    
+                    // Restore the actual physical modifier state to the focused app
+                    syncTargetModifierState(clear: false)
+                    
                     // If we were moving fast right before releasing, trigger the momentum fling.
                     flingDetectTimer?.invalidate()
                     startInertia()
                 }
+            }
+        }
+    }
+    
+    private func syncTargetModifierState(clear: Bool) {
+        let source = CGEventSource(stateID: .privateState)
+        // Fetch real hardware state if restoring, otherwise empty array
+        let targetFlags = clear ? CGEventFlags() : CGEventSource.flagsState(.hidSystemState)
+        
+        // Firing flagsChanged for the major modifiers ensures the focused app 
+        // recalculates its internal state mask and zeroes out the activation shortcut.
+        let modifierKeys: [CGKeyCode] = [56, 59, 58, 55] // L-Shift, L-Ctrl, L-Opt, L-Cmd
+        
+        for key in modifierKeys {
+            if let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false) {
+                event.type = .flagsChanged
+                event.flags = targetFlags
+                event.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
+                event.post(tap: .cgSessionEventTap)
             }
         }
     }
@@ -180,15 +209,24 @@ class ScrollModeManager {
         let finalY = dy * mult
         let finalX = dx * mult
         
+        // Use isolated .privateState to prevent global hardware modifiers from bleeding in
+        let source = CGEventSource(stateID: .privateState)
+        
         // Use standard `.pixel` event for smooth scrolling across the system
         if let scrollEvent = CGEvent(
-            scrollWheelEvent2Source: nil,
+            scrollWheelEvent2Source: source,
             units: .pixel,
             wheelCount: 2,
             wheel1: Int32(finalY),
             wheel2: Int32(finalX),
             wheel3: 0
         ) {
+            // Strip modifiers attached to the scroll wheel packet
+            scrollEvent.flags = CGEventFlags()
+            
+            // Explicitly mark as continuous trackpad-style scrolling
+            scrollEvent.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+            
             // These high-precision fields are REQUIRED for both:
             // 1. Smooth scrolling in Web Browsers (Chrome/Safari)
             // 2. Correct Tmux scroll accumulation in Terminals
@@ -198,10 +236,14 @@ class ScrollModeManager {
             // Inform the macOS Window Server of the gesture state
             if let p = phase {
                 scrollEvent.setIntegerValueField(.scrollWheelEventScrollPhase, value: p.rawValue)
+            } else {
+                scrollEvent.setIntegerValueField(.scrollWheelEventScrollPhase, value: 0)
             }
             
             if let mp = momentumPhase {
                 scrollEvent.setIntegerValueField(.scrollWheelEventMomentumPhase, value: mp.rawValue)
+            } else {
+                scrollEvent.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 0)
             }
             
             // Force the event to happen perfectly on the targeted area ONLY if actively holding the shortcut.
@@ -212,7 +254,9 @@ class ScrollModeManager {
             }
             
             scrollEvent.setIntegerValueField(.eventSourceUserData, value: magicEventSourceUserData)
-            scrollEvent.post(tap: .cghidEventTap)
+            
+            // Inject directly into the session to prevent WindowServer hardware merges
+            scrollEvent.post(tap: .cgSessionEventTap)
         }
     }
 }

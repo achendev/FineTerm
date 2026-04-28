@@ -55,7 +55,7 @@ class LibraryStore: ObservableObject {
     }
     
     func add(title: String, image: NSImage) {
-        processingQueue.async { [weak self] in
+        processingQueue.async {[weak self] in
             guard let self = self else { return }
             let thumbnail = ClipboardProcessor.resize(image: image, to: NSSize(width: 300, height: 300))
             var thumbData = thumbnail.tiffRepresentation
@@ -125,15 +125,35 @@ class LibraryStore: ObservableObject {
     }
     
     func copyToClipboard(item: LibraryItem) {
-        let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: blobsURL)
         let pb = NSPasteboard.general
         pb.clearContents()
-        if item.type == .image {
-            if let base64 = diskBlobs[item.id], let data = Data(base64Encoded: base64), let image = NSImage(data: data) {
-                pb.writeObjects([image])
+        
+        if item.type == .text {
+            pb.setString(item.content, forType: .string)
+            
+            processingQueue.async { [weak self] in
+                guard let self = self else { return }
+                let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: self.blobsURL)
+                if let fullContent = diskBlobs[item.id] {
+                    DispatchQueue.main.async {
+                        if pb.string(forType: .string) == item.content {
+                            pb.clearContents()
+                            pb.setString(fullContent, forType: .string)
+                        }
+                    }
+                }
             }
         } else {
-            pb.setString(diskBlobs[item.id] ?? item.content, forType: .string)
+            processingQueue.async { [weak self] in
+                guard let self = self else { return }
+                let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: self.blobsURL)
+                if let base64 = diskBlobs[item.id], let data = Data(base64Encoded: base64), let image = NSImage(data: data) {
+                    DispatchQueue.main.async {
+                        pb.clearContents()
+                        pb.writeObjects([image])
+                    }
+                }
+            }
         }
     }
     

@@ -20,6 +20,7 @@ class ClipboardStore: ObservableObject {
     
     private var timer: Timer?
     private var lastChangeCount: Int
+    private var lastWrittenChangeCount: Int = 0
     
     private let processingQueue = DispatchQueue(label: "com.fineterm.clipboard.processing", qos: .userInitiated)
     private let saveQueue = DispatchQueue(label: "com.fineterm.clipboard.save", qos: .utility)
@@ -51,6 +52,8 @@ class ClipboardStore: ObservableObject {
         let currentCount = pb.changeCount
         if currentCount != lastChangeCount {
             lastChangeCount = currentCount
+            if currentCount == lastWrittenChangeCount { return }
+            
             if let image = pb.readObjects(forClasses: [NSImage.self], options: nil)?.first as? NSImage {
                 processAndAdd(image: image)
             } else if let newString = pb.string(forType: .string) {
@@ -221,15 +224,51 @@ class ClipboardStore: ObservableObject {
     }
     
     func copyToClipboard(item: ClipboardItem) {
-        let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: blobsURL)
         let pb = NSPasteboard.general
         pb.clearContents()
-        if item.type == .image {
-            if let base64 = diskBlobs[item.id], let data = Data(base64Encoded: base64), let image = NSImage(data: data) {
-                pb.writeObjects([image])
+        
+        // Move item to top
+        if let idx = history.firstIndex(where: { $0.id == item.id }), idx > 0 {
+            var movedItem = history.remove(at: idx)
+            movedItem.timestamp = Date()
+            history.insert(movedItem, at: 0)
+            
+            let hSnapshot = self.history
+            let fURL = self.fileURL
+            saveQueue.async {
+                ClipboardCrypto.saveHistory(history: hSnapshot, fileURL: fURL)
+            }
+        }
+        
+        if item.type == .text {
+            pb.setString(item.content, forType: .string)
+            self.lastWrittenChangeCount = pb.changeCount
+            
+            processingQueue.async { [weak self] in
+                guard let self = self else { return }
+                let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: self.blobsURL)
+                if let fullContent = diskBlobs[item.id] {
+                    DispatchQueue.main.async {
+                        if pb.string(forType: .string) == item.content {
+                            pb.clearContents()
+                            pb.setString(fullContent, forType: .string)
+                            self.lastWrittenChangeCount = pb.changeCount
+                        }
+                    }
+                }
             }
         } else {
-            pb.setString(diskBlobs[item.id] ?? item.content, forType: .string)
+            processingQueue.async { [weak self] in
+                guard let self = self else { return }
+                let diskBlobs = ClipboardCrypto.loadBlobs(blobsURL: self.blobsURL)
+                if let base64 = diskBlobs[item.id], let data = Data(base64Encoded: base64), let image = NSImage(data: data) {
+                    DispatchQueue.main.async {
+                        pb.clearContents()
+                        pb.writeObjects([image])
+                        self.lastWrittenChangeCount = pb.changeCount
+                    }
+                }
+            }
         }
     }
     

@@ -33,7 +33,7 @@ extension ConnectionListView {
     }
     
     // MARK: - Filter Logic
-    func performFilter(_ text: String) ->[Connection] {
+    func performFilter(_ text: String) -> [Connection] {
         if smartFilter {
             // DRY: Using Shared Search Service
             // We combine name and command into a single searchable string
@@ -91,6 +91,7 @@ extension ConnectionListView {
         let changeTerminalName = UserDefaults.standard.bool(forKey: AppConfig.Keys.changeTerminalName)
         let target = UserDefaults.standard.string(forKey: AppConfig.Keys.targetTerminalBundleID) ?? "com.apple.Terminal"
         let isGhostty = target == "com.mitchellh.ghostty"
+        let isIterm = target == "com.googlecode.iterm2"
         
         // Background terminal name setting
         var terminalNamePrefix = ""
@@ -116,6 +117,9 @@ extension ConnectionListView {
         if isGhostty {
             let tabName = (changeTerminalName && conn.setTabName) ? conn.name : nil
             GhosttyBridge.launch(command: finalCommand, tabName: tabName)
+        } else if isIterm {
+            let tabName = (changeTerminalName && conn.setTabName) ? conn.name : nil
+            ItermBridge.launch(command: finalCommand, tabName: tabName)
         } else {
             TerminalBridge.launch(command: finalCommand)
         }
